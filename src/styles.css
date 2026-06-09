@@ -363,6 +363,15 @@ h3 {
   gap: 22px;
 }
 
+.booking-section {
+  scroll-margin-top: 96px;
+}
+
+.calendly-inline-widget {
+  width: 100%;
+  min-width: 320px;
+}
+
 .contact-form {
   display: grid;
   gap: 14px;

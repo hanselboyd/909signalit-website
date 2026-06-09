@@ -40,6 +40,6 @@ The production server serves the Vite `dist` output and uses Railway's `PORT` en
 
 ## Placeholders To Replace
 
-- `[ADD CALENDLY LINK]`
+- Calendly booking URL: `https://calendly.com/aiindextv/30min`
 - `[ADD EMAIL ADDRESS]`
 - Future images in `public/assets/`
