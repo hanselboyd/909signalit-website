@@ -34,9 +34,12 @@ The production server serves the Vite `dist` output and uses Railway's `PORT` en
 6. Add the custom domain `909signalit.com`.
 7. Add the DNS records in Cloudflare as Railway provides them.
 
+## Configured Contact
+
+- `909-260-8660`
+
 ## Placeholders To Replace
 
-- `[ADD PHONE NUMBER]`
 - `[ADD CALENDLY LINK]`
 - `[ADD EMAIL ADDRESS]`
 - Future images in `public/assets/`
