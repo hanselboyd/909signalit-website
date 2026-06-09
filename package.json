@@ -1,0 +1,14 @@
+{
+  "name": "909signalit-website",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "start": "node server.js"
+  },
+  "devDependencies": {
+    "vite": "^6.3.5"
+  }
+}
