@@ -37,9 +37,12 @@ The production server serves the Vite `dist` output and uses Railway's `PORT` en
 ## Configured Contact
 
 - `909-260-8660`
+- `support@909signalit.com`
+
+## Booking
+
+- Calendly booking URL: `https://calendly.com/aiindextv/30min`
 
 ## Placeholders To Replace
 
-- Calendly booking URL: `https://calendly.com/aiindextv/30min`
-- `[ADD EMAIL ADDRESS]`
 - Future images in `public/assets/`
