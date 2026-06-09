@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 120" role="img" aria-labelledby="title desc">
+  <title id="title">909 Signal IT compact mark</title>
+  <desc id="desc">Compact 909 Signal IT mark with small signal icon</desc>
+  <rect width="180" height="120" fill="none"/>
+  <g fill="none" stroke-linecap="round">
+    <path d="M60 26c16-14 44-14 60 0" stroke="#35b51f" stroke-width="8"/>
+    <path d="M74 41c9-7 23-7 32 0" stroke="#35b51f" stroke-width="7"/>
+    <circle cx="90" cy="55" r="6" fill="#35b51f" stroke="none"/>
+  </g>
+  <text x="13" y="96" fill="#071d3c" font-family="Inter, Arial, sans-serif" font-size="76" font-weight="900" letter-spacing="-2">909</text>
+</svg>

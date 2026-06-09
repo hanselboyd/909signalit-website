@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 430 120" role="img" aria-labelledby="title desc">
+  <title id="title">909 Signal IT</title>
+  <desc id="desc">Simplified 909 Signal IT horizontal logo</desc>
+  <rect width="430" height="120" fill="none"/>
+  <g fill="none" stroke-linecap="round">
+    <path d="M112 28c16-15 42-15 58 0" stroke="#35b51f" stroke-width="8"/>
+    <path d="M125 42c9-8 23-8 32 0" stroke="#35b51f" stroke-width="7"/>
+    <circle cx="141" cy="56" r="6" fill="#35b51f" stroke="none"/>
+  </g>
+  <text x="18" y="92" fill="#071d3c" font-family="Inter, Arial, sans-serif" font-size="86" font-weight="900" letter-spacing="-2">909</text>
+  <rect x="205" y="27" width="4" height="70" rx="2" fill="#1268f3"/>
+  <text x="228" y="65" fill="#071d3c" font-family="Inter, Arial, sans-serif" font-size="38" font-weight="800">Signal</text>
+  <text x="228" y="98" fill="#1268f3" font-family="Inter, Arial, sans-serif" font-size="34" font-weight="900">IT</text>
+</svg>

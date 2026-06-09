@@ -53,52 +53,9 @@ a {
 .brand-logo {
   display: block;
   width: auto;
-  max-width: min(270px, 52vw);
+  max-width: min(240px, 52vw);
   max-height: 44px;
   object-fit: contain;
-}
-
-.signal-mark {
-  position: relative;
-  width: 30px;
-  height: 24px;
-  border: 3px solid var(--blue);
-  border-top: 0;
-  border-radius: 0 0 18px 18px;
-}
-
-.signal-mark::before,
-.signal-mark::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  border: 3px solid var(--green);
-  border-bottom: 0;
-  border-radius: 28px 28px 0 0;
-}
-
-.signal-mark::before {
-  top: -16px;
-  width: 28px;
-  height: 12px;
-}
-
-.signal-mark::after {
-  top: -8px;
-  width: 16px;
-  height: 7px;
-}
-
-.signal-mark span {
-  position: absolute;
-  left: 50%;
-  bottom: -5px;
-  width: 8px;
-  height: 8px;
-  transform: translateX(-50%);
-  background: var(--green);
-  border-radius: 50%;
 }
 
 .site-nav {
@@ -409,7 +366,7 @@ textarea {
 .footer-logo {
   display: block;
   width: auto;
-  max-width: 220px;
+  max-width: 190px;
   max-height: 40px;
   object-fit: contain;
 }
@@ -424,7 +381,7 @@ textarea {
   }
 
   .brand-logo {
-    max-width: min(220px, 58vw);
+    max-width: min(210px, 58vw);
     max-height: 38px;
   }
 
