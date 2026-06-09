@@ -42,20 +42,70 @@ a {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   color: var(--navy);
   font-weight: 800;
   font-size: 1.15rem;
   text-decoration: none;
   letter-spacing: 0;
+  min-height: 44px;
 }
 
-.brand-logo {
-  display: block;
-  width: auto;
-  max-width: min(240px, 52vw);
-  max-height: 44px;
-  object-fit: contain;
+.brand-909 {
+  color: var(--navy);
+  font-size: 2.05rem;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.brand-text {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--navy);
+  font-size: 1.08rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.brand-text strong {
+  color: var(--blue);
+}
+
+.brand-signal {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  margin-left: 2px;
+}
+
+.brand-signal::before,
+.brand-signal::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 3px solid var(--green);
+  border-bottom: 0;
+  border-radius: 18px 18px 0 0;
+}
+
+.brand-signal::before {
+  top: 1px;
+  width: 18px;
+  height: 10px;
+}
+
+.brand-signal::after {
+  top: 8px;
+  width: 10px;
+  height: 6px;
+}
+
+.brand-signal {
+  border-bottom: 4px solid var(--green);
+  border-radius: 50%;
 }
 
 .site-nav {
@@ -363,12 +413,14 @@ textarea {
   gap: 14px;
 }
 
-.footer-logo {
-  display: block;
-  width: auto;
-  max-width: 190px;
-  max-height: 40px;
-  object-fit: contain;
+.footer-brand-logo {
+  color: var(--white);
+  min-height: 38px;
+}
+
+.footer-brand-logo .brand-909,
+.footer-brand-logo .brand-text {
+  color: var(--white);
 }
 
 .site-footer a {
@@ -380,13 +432,21 @@ textarea {
     align-items: flex-start;
   }
 
-  .brand-logo {
-    max-width: min(210px, 58vw);
-    max-height: 38px;
+  .brand {
+    min-height: 38px;
   }
 
-  .footer-logo {
-    max-height: 36px;
+  .brand-909 {
+    font-size: 1.75rem;
+  }
+
+  .brand-text {
+    font-size: 0.98rem;
+  }
+
+  .brand-signal {
+    width: 16px;
+    height: 16px;
   }
 
   .nav-toggle {
