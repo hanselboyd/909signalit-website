@@ -103,6 +103,46 @@
         </div>
       </section>
 
+      <section class="home-lead-section">
+        <div class="home-lead-card">
+          <div>
+            <p class="eyebrow">Fast request</p>
+            <h2>Request IT Support</h2>
+            <p>Tell us what you need help with. We’ll follow up as soon as possible.</p>
+          </div>
+          <form class="compact-lead-form" data-lead-form aria-label="Request IT Support">
+            <p class="form-message" data-lead-form-message role="status" aria-live="polite"></p>
+            <input type="hidden" name="source" value="Homepage" />
+            <input type="hidden" name="urgency" value="Normal" />
+            <input type="hidden" name="preferredContact" value="Call or Text" />
+            <input type="hidden" name="customerType" value="Unknown" />
+            <input type="hidden" name="email" value="" />
+            <input type="hidden" name="businessName" value="" />
+            <label>Name <input type="text" name="name" required /></label>
+            <label>Phone <input type="tel" name="phone" required /></label>
+            <label>Service Needed
+              <select name="serviceRequested" required>
+                <option value="">Select a service</option>
+                <option>Computer Repair</option>
+                <option>Wi-Fi Troubleshooting</option>
+                <option>Printer Setup</option>
+                <option>Small Business IT Support</option>
+                <option>Network Support</option>
+                <option>POS Support</option>
+                <option>Microsoft 365 Support</option>
+                <option>Email Support</option>
+                <option>Data Backup Setup</option>
+                <option>Remote IT Support</option>
+                <option>Other</option>
+              </select>
+            </label>
+            <label>City <input type="text" name="city" required /></label>
+            <label class="full">Message <textarea name="message" rows="3" placeholder="Briefly describe the issue" required></textarea></label>
+            <button class="button primary" type="submit">Request Support</button>
+          </form>
+        </div>
+      </section>
+
       <section class="trust-bar" aria-label="Trust signals">
         <span>25+ Years Experience</span>
         <span>Ontario CA</span>

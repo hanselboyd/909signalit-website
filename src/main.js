@@ -9,10 +9,12 @@ if (toggle && nav) {
   });
 }
 
-const leadForm = document.querySelector("#lead-form");
-const leadFormMessage = document.querySelector("#lead-form-message");
+const leadForms = document.querySelectorAll("[data-lead-form]");
 
-if (leadForm && leadFormMessage) {
+leadForms.forEach((leadForm) => {
+  const leadFormMessage = leadForm.querySelector("[data-lead-form-message]");
+  if (!leadFormMessage) return;
+
   leadForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const submitButton = leadForm.querySelector("button[type='submit']");
@@ -28,13 +30,14 @@ if (leadForm && leadFormMessage) {
       });
       const result = await response.json();
       leadFormMessage.textContent = result.message || "Thank you. Your request has been received. 909 Signal IT will follow up as soon as possible.";
-      leadFormMessage.classList.toggle("is-error", !response.ok);
+      leadFormMessage.classList.toggle("form-error", !response.ok);
+      leadFormMessage.classList.toggle("form-success", response.ok);
       if (response.ok) leadForm.reset();
     } catch {
       leadFormMessage.textContent = "Something went wrong. Please call or text 909-260-8660.";
-      leadFormMessage.classList.add("is-error");
+      leadFormMessage.classList.add("form-error");
     } finally {
       submitButton.disabled = false;
     }
   });
-}
+});
