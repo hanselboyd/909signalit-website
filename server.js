@@ -11,6 +11,11 @@ const root = join(process.cwd(), "dist");
 
 const leadStatuses = ["New Lead", "Contacted", "Scheduled", "In Progress", "Waiting on Customer", "Completed", "Invoice Sent", "Closed", "Lost"];
 const ticketStatuses = ["New", "Scheduled", "In Progress", "Waiting on Customer", "Completed", "Closed", "Canceled"];
+const customerTypes = ["Residential", "Business", "Warehouse", "Restaurant", "Church", "Nonprofit", "Other"];
+const serviceTypes = ["Computer Repair", "Wi-Fi Troubleshooting", "Printer Setup", "Small Business IT Support", "Network Support", "POS Support", "Microsoft 365 Support", "Email Support", "Data Backup Setup", "Remote IT Support", "Other"];
+const urgencyOptions = ["Normal", "Same-day if available", "Emergency"];
+const contactOptions = ["Call", "Text", "Email"];
+const sourceOptions = ["Website", "Google Business Profile", "Phone", "Text", "Referral", "Facebook", "Nextdoor", "Walk-in", "Other"];
 
 app.set("trust proxy", 1);
 app.use(express.urlencoded({ extended: true }));
@@ -117,6 +122,34 @@ function statusOptions(statuses, selected) {
   return statuses.map((status) => `<option value="${esc(status)}"${status === selected ? " selected" : ""}>${esc(status)}</option>`).join("");
 }
 
+function deskSetupMessage(response) {
+  response.status(503).send(layout("Database Setup Needed", `<section class="card"><h1>Database is not ready.</h1><p>Confirm DATABASE_URL is set and run <code>npx prisma db push</code>.</p><p class="muted">After the database is ready, refresh this page.</p></section>`));
+}
+
+function fieldValue(values, field, fallback = "") {
+  return esc(values?.[field] ?? fallback);
+}
+
+function leadForm(action, values = {}) {
+  return `<form method="post" action="${esc(action)}">
+    <h1>Add Lead</h1>
+    <label>Name <input name="name" value="${fieldValue(values, "name")}" required></label>
+    <label>Phone <input name="phone" value="${fieldValue(values, "phone")}" required></label>
+    <label>Email <input name="email" type="email" value="${fieldValue(values, "email")}"></label>
+    <label>Business name <input name="businessName" value="${fieldValue(values, "businessName")}"></label>
+    <label>Customer type <select name="customerType" required><option value="">Select one</option>${statusOptions(customerTypes, values.customerType)}</select></label>
+    <label>City <input name="city" value="${fieldValue(values, "city")}" required></label>
+    <label>Service requested <select name="serviceRequested" required><option value="">Select one</option>${statusOptions(serviceTypes, values.serviceRequested)}</select></label>
+    <label>Urgency <select name="urgency" required>${statusOptions(urgencyOptions, values.urgency || "Normal")}</select></label>
+    <label>Preferred contact <select name="preferredContact" required>${statusOptions(contactOptions, values.preferredContact || "Call")}</select></label>
+    <label>Source <select name="source" required>${statusOptions(sourceOptions, values.source || "Phone")}</select></label>
+    <label>Status <select name="status">${statusOptions(leadStatuses, values.status || "New Lead")}</select></label>
+    <label>Message <textarea name="message" required>${fieldValue(values, "message")}</textarea></label>
+    <label>Notes <textarea name="notes">${fieldValue(values, "notes")}</textarea></label>
+    <button type="submit">Create Lead</button>
+  </form>`;
+}
+
 function searchWhere(q, fields) {
   if (!q) return undefined;
   return { OR: fields.map((field) => ({ [field]: { contains: q, mode: "insensitive" } })) };
@@ -209,7 +242,7 @@ app.get("/desk", requireAuth, async (request, response) => {
     prisma.lead.findMany({ orderBy: { createdAt: "desc" }, take: 8 }),
     prisma.ticket.findMany({ orderBy: { updatedAt: "desc" }, take: 8 })
   ]);
-  response.send(layout("Dashboard", `<section class="grid">
+  response.send(layout("Dashboard", `<section class="card row"><a class="button" href="/desk/leads/new">Add Lead</a></section><section class="grid">
     <div class="card metric"><span>New leads</span><strong>${newLeads}</strong></div>
     <div class="card metric"><span>Scheduled jobs</span><strong>${scheduledJobs}</strong></div>
     <div class="card metric"><span>In progress</span><strong>${inProgress}</strong></div>
@@ -223,7 +256,39 @@ app.get("/desk/leads", requireAuth, async (request, response) => {
   const status = String(request.query.status || "");
   const where = { AND: [status ? { status } : {}, searchWhere(q, ["name", "phone", "email", "businessName", "city", "serviceRequested"]) || {}] };
   const leads = await prisma.lead.findMany({ where, orderBy: { createdAt: "desc" } });
-  response.send(layout("Leads", `<section class="card"><h1>Leads</h1><form method="get" class="row"><input name="q" value="${esc(q)}" placeholder="Search leads"><select name="status"><option value="">All statuses</option>${statusOptions(leadStatuses, status)}</select><button>Filter</button></form></section>${leadTable(leads)}`));
+  response.send(layout("Leads", `<section class="card"><div class="row"><h1>Leads</h1><a class="button" href="/desk/leads/new">Add Lead</a></div><form method="get" class="row"><input name="q" value="${esc(q)}" placeholder="Search leads"><select name="status"><option value="">All statuses</option>${statusOptions(leadStatuses, status)}</select><button>Filter</button></form></section>${leadTable(leads)}`));
+});
+
+app.get("/desk/leads/new", requireAuth, (request, response) => {
+  response.send(layout("Add Lead", leadForm("/desk/leads/new")));
+});
+
+app.post("/desk/leads/new", requireAuth, async (request, response) => {
+  const body = request.body;
+  const required = ["name", "phone", "city", "customerType", "serviceRequested", "urgency", "preferredContact", "source", "message"];
+  const missing = required.filter((field) => !String(body[field] || "").trim());
+  if (missing.length) {
+    response.status(400).send(layout("Add Lead", `<section class="card"><p class="danger">Please complete the required fields.</p></section>${leadForm("/desk/leads/new", body)}`));
+    return;
+  }
+  const lead = await prisma.lead.create({
+    data: {
+      name: body.name.trim(),
+      phone: body.phone.trim(),
+      email: body.email?.trim() || null,
+      businessName: body.businessName?.trim() || null,
+      customerType: body.customerType,
+      city: body.city.trim(),
+      serviceRequested: body.serviceRequested,
+      urgency: body.urgency,
+      preferredContact: body.preferredContact,
+      message: body.message.trim(),
+      source: body.source,
+      status: body.status || "New Lead",
+      notes: body.notes?.trim() || null
+    }
+  });
+  response.redirect(`/desk/leads/${lead.id}`);
 });
 
 app.get("/desk/leads/:id", requireAuth, async (request, response) => {
@@ -328,6 +393,15 @@ app.post("/desk/tickets/:id/update", requireAuth, async (request, response) => {
   };
   await prisma.ticket.update({ where: { id: Number(request.params.id) }, data });
   response.redirect(`/desk/tickets/${request.params.id}`);
+});
+
+app.use((error, request, response, next) => {
+  console.error(error);
+  if (request.path.startsWith("/desk")) {
+    deskSetupMessage(response);
+    return;
+  }
+  next(error);
 });
 
 app.use(express.static(root, {
