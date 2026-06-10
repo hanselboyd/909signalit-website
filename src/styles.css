@@ -491,7 +491,28 @@ h3 {
   font-weight: 800;
 }
 
+.form-message {
+  margin: 0;
+  padding: 12px 14px;
+  color: var(--navy);
+  background: #eef8ee;
+  border: 1px solid rgba(53, 181, 31, 0.28);
+  border-radius: 8px;
+  font-weight: 800;
+}
+
+.form-message:empty {
+  display: none;
+}
+
+.form-message.is-error {
+  color: #8a1f11;
+  background: #fff2ef;
+  border-color: #f3c1b6;
+}
+
 input,
+select,
 textarea {
   width: 100%;
   padding: 12px 14px;

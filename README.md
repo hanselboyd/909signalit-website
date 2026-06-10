@@ -34,6 +34,42 @@ The production server serves the Vite `dist` output and uses Railway's `PORT` en
 6. Add the custom domain `909signalit.com`.
 7. Add the DNS records in Cloudflare as Railway provides them.
 
+## 909 Signal Desk CRM
+
+The private CRM/job desk is available at `/desk` after deployment. It captures public contact form submissions as leads and provides private lead, customer, and ticket management.
+
+### Railway PostgreSQL
+
+1. In Railway, open the project.
+2. Add a PostgreSQL database service.
+3. Copy or link the generated `DATABASE_URL` into the website service variables.
+4. Add the admin session variables listed below.
+5. Run Prisma setup from a Railway shell or locally with the same `DATABASE_URL`:
+
+```bash
+npx prisma generate
+npx prisma db push
+```
+
+### Required Environment Variables
+
+```bash
+DATABASE_URL=
+ADMIN_USERNAME=
+ADMIN_PASSWORD=
+SESSION_SECRET=
+```
+
+Do not commit real admin credentials. Use a long random value for `SESSION_SECRET`.
+
+### CRM Routes
+
+- `/desk`
+- `/desk/leads`
+- `/desk/customers`
+- `/desk/tickets`
+- `/api/leads`
+
 ## Configured Contact
 
 - `909-260-8660`
