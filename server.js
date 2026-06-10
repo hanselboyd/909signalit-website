@@ -3,6 +3,7 @@ import session from "express-session";
 import { PrismaClient } from "@prisma/client";
 import { existsSync } from "node:fs";
 import { extname, join } from "node:path";
+import { isLeadNotificationConfigured, sendLeadNotification } from "./src/server/email.js";
 
 const app = express();
 const prisma = new PrismaClient();
@@ -187,7 +188,7 @@ app.post("/api/leads", async (request, response) => {
   }
 
   try {
-    await prisma.lead.create({
+    const lead = await prisma.lead.create({
       data: {
         name: body.name.trim(),
         phone: body.phone.trim(),
@@ -199,11 +200,15 @@ app.post("/api/leads", async (request, response) => {
         urgency: body.urgency,
         preferredContact: body.preferredContact,
         message: body.message.trim(),
-        source: "Website",
+        source: body.source?.trim() || "Website",
         status: "New Lead"
       }
     });
-    // TODO: Add email notification to support@909signalit.com after SMTP/provider setup.
+
+    sendLeadNotification(lead).catch((error) => {
+      console.error("Lead notification email failed:", error?.message || error);
+    });
+
     response.json({ ok: true, message: "Thank you. Your request has been received. 909 Signal IT will follow up as soon as possible." });
   } catch (error) {
     console.error(error);
@@ -422,4 +427,5 @@ app.use((request, response) => {
 
 app.listen(port, () => {
   console.log(`909 Signal IT site running on port ${port}`);
+  console.log(`Lead notification configured: ${isLeadNotificationConfigured() ? "yes" : "no"}`);
 });

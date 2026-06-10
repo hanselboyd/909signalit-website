@@ -58,9 +58,22 @@ DATABASE_URL=
 ADMIN_USERNAME=
 ADMIN_PASSWORD=
 SESSION_SECRET=
+LEAD_NOTIFY_EMAIL=support@909signalit.com
+RESEND_API_KEY=
+FROM_EMAIL=
 ```
 
 Do not commit real admin credentials. Use a long random value for `SESSION_SECRET`.
+
+### Lead Email Notifications
+
+Lead notification emails use Resend. Create a Resend account, verify the sending domain, create an API key, and set:
+
+- `RESEND_API_KEY`
+- `FROM_EMAIL`, for example `909 Signal IT <noreply@909signalit.com>` after the domain is verified
+- `LEAD_NOTIFY_EMAIL=support@909signalit.com`
+
+If these variables are not set, or if Resend delivery fails, lead creation still succeeds. The server logs a safe email error without showing secrets.
 
 ### CRM Routes
 

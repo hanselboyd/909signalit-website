@@ -17,7 +17,8 @@
     "@prisma/client": "^6.19.0",
     "express": "^5.2.1",
     "express-session": "^1.19.0",
-    "prisma": "^6.19.0"
+    "prisma": "^6.19.0",
+    "resend": "^6.12.4"
   },
   "devDependencies": {
     "vite": "^6.3.5"
