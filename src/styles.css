@@ -446,6 +446,15 @@ h3 {
   box-shadow: 0 12px 28px rgba(7, 29, 60, 0.06);
 }
 
+.service-card img {
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+  display: block;
+  margin-bottom: 18px;
+  border-radius: 8px;
+}
+
 .popular-services {
   padding-top: 0;
 }
@@ -578,6 +587,27 @@ h3 {
 .text-link {
   color: var(--blue);
   font-weight: 800;
+}
+
+.owner-trust {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.42fr);
+  gap: clamp(24px, 5vw, 54px);
+  align-items: center;
+  padding-top: 44px;
+}
+
+.owner-trust img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  display: block;
+  border-radius: 8px;
+  box-shadow: 0 18px 38px rgba(7, 29, 60, 0.12);
+}
+
+.owner-trust-copy {
+  max-width: 680px;
 }
 
 .areas-preview,
@@ -790,6 +820,7 @@ textarea {
   .services-list,
   .area-grid,
   .local-service-layout,
+  .owner-trust,
   .contact-layout {
     grid-template-columns: 1fr;
   }
