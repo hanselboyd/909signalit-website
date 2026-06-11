@@ -62,6 +62,7 @@ LEAD_NOTIFY_EMAIL=support@909signalit.com
 RESEND_API_KEY=
 FROM_EMAIL=
 STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
 PUBLIC_SITE_URL=https://909signalit.com
 ```
 
@@ -86,9 +87,20 @@ If these variables are not set, or if Resend delivery fails, lead creation still
 3. In Railway, add:
 
 - `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
 - `PUBLIC_SITE_URL=https://909signalit.com`
 
 If `STRIPE_SECRET_KEY` is missing, invoices still work. The CRM shows: `Stripe is not configured. Add STRIPE_SECRET_KEY in Railway to generate payment links.`
+
+To automatically mark invoices paid after Checkout succeeds:
+
+1. In Stripe Dashboard, open Developers -> Webhooks.
+2. Add endpoint `https://909signalit.com/api/stripe/webhook`.
+3. Select event `checkout.session.completed`.
+4. Copy the webhook signing secret.
+5. In Railway, add `STRIPE_WEBHOOK_SECRET=whsec_...`.
+6. Redeploy the website service.
+7. Use a Stripe test payment and confirm the matching invoice status changes to `Paid`.
 
 After adding invoice schema changes, run:
 

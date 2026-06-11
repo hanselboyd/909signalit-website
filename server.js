@@ -25,6 +25,50 @@ const sourceOptions = ["Website", "Google Business Profile", "Phone", "Text", "R
 
 app.set("trust proxy", 1);
 app.use(express.urlencoded({ extended: true }));
+
+app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async (request, response) => {
+  if (!stripe || !process.env.STRIPE_WEBHOOK_SECRET) {
+    response.status(503).send("Stripe webhook is not configured.");
+    return;
+  }
+
+  const signature = request.headers["stripe-signature"];
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(request.body, signature, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (error) {
+    console.error("Stripe webhook signature verification failed:", error?.message || error);
+    response.status(400).send("Invalid Stripe webhook signature.");
+    return;
+  }
+
+  if (event.type === "checkout.session.completed") {
+    const session = event.data.object;
+    const invoiceId = Number(session.metadata?.invoiceId);
+
+    if (Number.isInteger(invoiceId) && invoiceId > 0) {
+      const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId } });
+      if (invoice) {
+        await prisma.invoice.update({
+          where: { id: invoice.id },
+          data: {
+            status: "Paid",
+            paidAt: new Date(),
+            stripeCheckoutSessionId: session.id || invoice.stripeCheckoutSessionId
+          }
+        });
+      } else {
+        console.warn(`Stripe webhook invoice not found: ${invoiceId}`);
+      }
+    } else {
+      console.warn("Stripe webhook missing invoiceId metadata.");
+    }
+  }
+
+  response.json({ received: true });
+});
+
 app.use(express.json());
 app.use(session({
   name: "signal_desk",
