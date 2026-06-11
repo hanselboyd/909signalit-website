@@ -301,6 +301,64 @@ function parseInvoiceInput(body) {
   };
 }
 
+function invoicePaymentMessages(invoice) {
+  if (!invoice.paymentLink) {
+    return `<section class="card"><h2>Send Payment Link</h2><p class="muted">Generate a payment link to unlock copy-ready client messages.</p></section>`;
+  }
+
+  const customerName = invoice.customerName || "there";
+  const textMessage = `Hi, this is 909 Signal IT. Here is your secure payment link for today's IT service: ${invoice.paymentLink}. Thank you for choosing 909 Signal IT.`;
+  const emailSubject = `909 Signal IT Invoice ${invoice.invoiceNumber}`;
+  const emailBody = `Hello ${customerName},
+
+Thank you for choosing 909 Signal IT. Your secure payment link is below:
+
+${invoice.paymentLink}
+
+Invoice: ${invoice.invoiceNumber}
+Amount Due: ${dollars(invoice.totalCents)}
+
+Please let me know if you have any questions.
+
+Thank you,
+909 Signal IT
+909-260-8660
+support@909signalit.com`;
+
+  return `<section class="card">
+    <h2>Send Payment Link</h2>
+    <div class="grid two">
+      <div>
+        <h3>Text Message</h3>
+        <textarea readonly id="invoice-text-message">${esc(textMessage)}</textarea>
+        <div class="row"><button type="button" data-copy-target="invoice-text-message">Copy Text Message</button><span class="muted" data-copy-status="invoice-text-message"></span></div>
+      </div>
+      <div>
+        <h3>Email Message</h3>
+        <label>Subject <input readonly value="${esc(emailSubject)}"></label>
+        <textarea readonly id="invoice-email-body">${esc(emailBody)}</textarea>
+        <div class="row"><button type="button" data-copy-target="invoice-email-body">Copy Email Body</button><span class="muted" data-copy-status="invoice-email-body"></span></div>
+      </div>
+    </div>
+    <label>Payment Link <input readonly id="invoice-payment-link" value="${esc(invoice.paymentLink)}"></label>
+    <div class="row"><button type="button" data-copy-target="invoice-payment-link">Copy Payment Link</button><span class="muted" data-copy-status="invoice-payment-link"></span></div>
+  </section>
+  <script>
+    document.querySelectorAll("[data-copy-target]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const target = document.getElementById(button.dataset.copyTarget);
+        const status = document.querySelector('[data-copy-status="' + button.dataset.copyTarget + '"]');
+        if (!target || !navigator.clipboard) return;
+        await navigator.clipboard.writeText(target.value);
+        if (status) {
+          status.textContent = "Copied.";
+          window.setTimeout(() => { status.textContent = ""; }, 1800);
+        }
+      });
+    });
+  </script>`;
+}
+
 async function generateInvoiceCheckoutSession(invoice) {
   if (!stripe) {
     return { error: "Stripe is not configured. Add STRIPE_SECRET_KEY in Railway to generate payment links." };
@@ -648,6 +706,7 @@ app.get("/desk/invoices/:id", requireAuth, async (request, response) => {
         <button>Generate Payment Link</button>
       </form>
     </section>
+    ${invoicePaymentMessages(invoice)}
     <section class="card">
       <h2>Line Items</h2>
       <table><thead><tr><th>Description</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead><tbody>${lineRows}</tbody></table>
