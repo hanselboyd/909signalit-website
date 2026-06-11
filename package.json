@@ -18,7 +18,8 @@
     "express": "^5.2.1",
     "express-session": "^1.19.0",
     "prisma": "^6.19.0",
-    "resend": "^6.12.4"
+    "resend": "^6.12.4",
+    "stripe": "^22.2.0"
   },
   "devDependencies": {
     "vite": "^6.3.5"

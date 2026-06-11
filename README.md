@@ -61,6 +61,8 @@ SESSION_SECRET=
 LEAD_NOTIFY_EMAIL=support@909signalit.com
 RESEND_API_KEY=
 FROM_EMAIL=
+STRIPE_SECRET_KEY=
+PUBLIC_SITE_URL=https://909signalit.com
 ```
 
 Do not commit real admin credentials. Use a long random value for `SESSION_SECRET`.
@@ -75,12 +77,33 @@ Lead notification emails use Resend. Create a Resend account, verify the sending
 
 If these variables are not set, or if Resend delivery fails, lead creation still succeeds. The server logs a safe email error without showing secrets.
 
+### Stripe Invoice Payments
+
+909 Signal Desk stores invoices and can generate Stripe-hosted Checkout links for payment collection. Credit card processing stays on Stripe; the CRM only stores invoice records, checkout session IDs, and payment URLs.
+
+1. Create or open a Stripe account.
+2. Copy a secret API key from Stripe Developers.
+3. In Railway, add:
+
+- `STRIPE_SECRET_KEY`
+- `PUBLIC_SITE_URL=https://909signalit.com`
+
+If `STRIPE_SECRET_KEY` is missing, invoices still work. The CRM shows: `Stripe is not configured. Add STRIPE_SECRET_KEY in Railway to generate payment links.`
+
+After adding invoice schema changes, run:
+
+```bash
+npx prisma db push
+npx prisma generate
+```
+
 ### CRM Routes
 
 - `/desk`
 - `/desk/leads`
 - `/desk/customers`
 - `/desk/tickets`
+- `/desk/invoices`
 - `/api/leads`
 
 ## Configured Contact

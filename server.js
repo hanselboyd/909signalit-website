@@ -1,6 +1,7 @@
 import express from "express";
 import session from "express-session";
 import { PrismaClient } from "@prisma/client";
+import Stripe from "stripe";
 import { existsSync } from "node:fs";
 import { extname, join } from "node:path";
 import { isLeadNotificationConfigured, sendLeadNotification } from "./src/server/email.js";
@@ -9,11 +10,15 @@ const app = express();
 const prisma = new PrismaClient();
 const port = process.env.PORT || 3000;
 const root = join(process.cwd(), "dist");
+const siteUrl = process.env.PUBLIC_SITE_URL || "https://909signalit.com";
+const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
 const leadStatuses = ["New Lead", "Contacted", "Scheduled", "In Progress", "Waiting on Customer", "Completed", "Invoice Sent", "Closed", "Lost"];
 const ticketStatuses = ["New", "Scheduled", "In Progress", "Waiting on Customer", "Completed", "Closed", "Canceled"];
+const invoiceStatuses = ["Draft", "Sent", "Partially Paid", "Paid", "Overdue", "Void", "Refunded"];
 const customerTypes = ["Residential", "Business", "Warehouse", "Restaurant", "Church", "Nonprofit", "Other"];
 const serviceTypes = ["Computer Repair", "Wi-Fi Troubleshooting", "Printer Setup", "Small Business IT Support", "Network Support", "POS Support", "Microsoft 365 Support", "Email Support", "Data Backup Setup", "Remote IT Support", "Other"];
+const invoiceServiceOptions = ["Remote IT Support", "On-site IT Support", "Computer Repair", "Wi-Fi Troubleshooting", "Printer Setup", "Network Support", "POS Support", "Microsoft 365 Support", "Data Backup Setup", "Technology Checkup", "Same-Day IT Support"];
 const urgencyOptions = ["Normal", "Same-day if available", "Emergency"];
 const contactOptions = ["Call", "Text", "Email"];
 const sourceOptions = ["Website", "Google Business Profile", "Phone", "Text", "Referral", "Facebook", "Nextdoor", "Walk-in", "Other"];
@@ -46,10 +51,33 @@ function money(value) {
   return value == null ? "" : esc(value);
 }
 
+function dollars(cents = 0) {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format((Number(cents) || 0) / 100);
+}
+
+function parseMoneyToCents(value) {
+  const cleaned = String(value ?? "").replace(/[$,\s]/g, "");
+  if (!cleaned) return 0;
+  const amount = Number(cleaned);
+  if (!Number.isFinite(amount) || amount < 0) return null;
+  return Math.round(amount * 100);
+}
+
+function parsePositiveInt(value, fallback = 1) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function dateValue(value) {
   if (!value) return "";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 16);
+}
+
+function dateOnlyValue(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
 }
 
 function nowMonthStart() {
@@ -111,6 +139,7 @@ function layout(title, body) {
       <a href="/desk/leads">Leads</a>
       <a href="/desk/customers">Customers</a>
       <a href="/desk/tickets">Tickets</a>
+      <a href="/desk/invoices">Invoices</a>
       <a href="/desk/logout">Logout</a>
     </nav>
   </header>
@@ -121,6 +150,10 @@ function layout(title, body) {
 
 function statusOptions(statuses, selected) {
   return statuses.map((status) => `<option value="${esc(status)}"${status === selected ? " selected" : ""}>${esc(status)}</option>`).join("");
+}
+
+function serviceDatalist() {
+  return `<datalist id="invoice-service-options">${invoiceServiceOptions.map((service) => `<option value="${esc(service)}"></option>`).join("")}</datalist>`;
 }
 
 function deskSetupMessage(response) {
@@ -176,6 +209,160 @@ function ticketTable(tickets) {
       <td>${ticket.appointmentAt ? new Date(ticket.appointmentAt).toLocaleString() : ""}</td>
       <td>${new Date(ticket.updatedAt).toLocaleDateString()}</td>
     </tr>`).join("") || `<tr><td colspan="5">No tickets found.</td></tr>`}</tbody></table>`;
+}
+
+function invoiceTable(invoices) {
+  return `<table><thead><tr><th>Invoice</th><th>Customer</th><th>Status</th><th>Total</th><th>Due</th><th>Created</th></tr></thead><tbody>${invoices.map((invoice) => `
+    <tr>
+      <td><a href="/desk/invoices/${invoice.id}">${esc(invoice.invoiceNumber)}</a></td>
+      <td>${esc(invoice.customerName)}<br><span class="muted">${esc(invoice.customerEmail || invoice.customerPhone || "")}</span></td>
+      <td>${esc(invoice.status)}</td>
+      <td>${dollars(invoice.totalCents)}</td>
+      <td>${invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : ""}</td>
+      <td>${new Date(invoice.createdAt).toLocaleDateString()}</td>
+    </tr>`).join("") || `<tr><td colspan="6">No invoices found.</td></tr>`}</tbody></table>`;
+}
+
+function invoiceForm(action, values = {}, message = "") {
+  const itemCount = Math.max(3, values.descriptions?.length || 0);
+  const rows = Array.from({ length: itemCount }, (_, index) => `
+    <div class="grid">
+      <label>Description <input name="description" list="invoice-service-options" value="${esc(values.descriptions?.[index] || "")}" ${index === 0 ? "required" : ""}></label>
+      <label>Quantity <input name="quantity" type="number" min="1" step="1" value="${esc(values.quantities?.[index] || "1")}"></label>
+      <label>Unit price <input name="unitPrice" inputmode="decimal" placeholder="0.00" value="${esc(values.unitPrices?.[index] || "")}" ${index === 0 ? "required" : ""}></label>
+      <span></span>
+    </div>`).join("");
+
+  return `<form method="post" action="${esc(action)}">
+    <h1>New Invoice</h1>
+    ${message}
+    <section class="grid two">
+      <label>Customer name <input name="customerName" value="${fieldValue(values, "customerName")}" required></label>
+      <label>Customer email <input name="customerEmail" type="email" value="${fieldValue(values, "customerEmail")}"></label>
+      <label>Customer phone <input name="customerPhone" value="${fieldValue(values, "customerPhone")}"></label>
+      <label>Due date <input name="dueDate" type="date" value="${fieldValue(values, "dueDate")}"></label>
+    </section>
+    <h2>Line Items</h2>
+    ${serviceDatalist()}
+    ${rows}
+    <section class="grid two">
+      <label>Discount <input name="discount" inputmode="decimal" placeholder="0.00" value="${fieldValue(values, "discount")}"></label>
+      <label>Tax <input name="tax" inputmode="decimal" placeholder="0.00" value="${fieldValue(values, "tax")}"></label>
+    </section>
+    <label>Notes <textarea name="notes">${fieldValue(values, "notes")}</textarea></label>
+    <button type="submit">Save Draft</button>
+  </form>`;
+}
+
+async function nextInvoiceNumber() {
+  const year = new Date().getFullYear();
+  const prefix = `SIG-${year}-`;
+  const latest = await prisma.invoice.findFirst({
+    where: { invoiceNumber: { startsWith: prefix } },
+    orderBy: { invoiceNumber: "desc" }
+  });
+  const lastSequence = latest ? Number.parseInt(latest.invoiceNumber.slice(prefix.length), 10) : 0;
+  return `${prefix}${String((Number.isFinite(lastSequence) ? lastSequence : 0) + 1).padStart(4, "0")}`;
+}
+
+function parseInvoiceInput(body) {
+  const descriptions = Array.isArray(body.description) ? body.description : [body.description];
+  const quantities = Array.isArray(body.quantity) ? body.quantity : [body.quantity];
+  const unitPrices = Array.isArray(body.unitPrice) ? body.unitPrice : [body.unitPrice];
+  const lineItems = descriptions.map((description, index) => {
+    const trimmedDescription = String(description || "").trim();
+    if (!trimmedDescription) return null;
+    const quantity = parsePositiveInt(quantities[index], 1);
+    const unitPriceCents = parseMoneyToCents(unitPrices[index]);
+    if (unitPriceCents == null) return { error: "Line item prices must be valid positive amounts." };
+    return {
+      description: trimmedDescription,
+      quantity,
+      unitPriceCents,
+      lineTotalCents: quantity * unitPriceCents
+    };
+  }).filter(Boolean);
+  const invalidLine = lineItems.find((item) => item.error);
+  if (invalidLine) return { error: invalidLine.error };
+  if (!lineItems.length) return { error: "Add at least one invoice line item." };
+
+  const subtotalCents = lineItems.reduce((total, item) => total + item.lineTotalCents, 0);
+  const discountCents = parseMoneyToCents(body.discount);
+  const taxCents = parseMoneyToCents(body.tax);
+  if (discountCents == null || taxCents == null) return { error: "Tax and discount must be valid positive amounts." };
+  const totalCents = Math.max(0, subtotalCents - discountCents + taxCents);
+
+  return {
+    lineItems,
+    subtotalCents,
+    discountCents,
+    taxCents,
+    totalCents
+  };
+}
+
+async function generateInvoiceCheckoutSession(invoice) {
+  if (!stripe) {
+    return { error: "Stripe is not configured. Add STRIPE_SECRET_KEY in Railway to generate payment links." };
+  }
+
+  if (!invoice.lineItems.length || invoice.totalCents <= 0) {
+    return { error: "Add billable line items before generating a payment link." };
+  }
+
+  const lineItems = invoice.lineItems.filter((item) => item.unitPriceCents > 0).map((item) => ({
+    quantity: item.quantity,
+    price_data: {
+      currency: "usd",
+      product_data: {
+        name: item.description
+      },
+      unit_amount: item.unitPriceCents
+    }
+  }));
+
+  if (!lineItems.length) {
+    return { error: "Add billable line items before generating a payment link." };
+  }
+
+  if (invoice.taxCents > 0) {
+    lineItems.push({
+      quantity: 1,
+      price_data: {
+        currency: "usd",
+        product_data: { name: "Tax" },
+        unit_amount: invoice.taxCents
+      }
+    });
+  }
+
+  const discounts = [];
+  if (invoice.discountCents > 0) {
+    const coupon = await stripe.coupons.create({
+      amount_off: invoice.discountCents,
+      currency: "usd",
+      duration: "once",
+      name: `${invoice.invoiceNumber} discount`
+    });
+    discounts.push({ coupon: coupon.id });
+  }
+
+  const sessionParams = {
+    mode: "payment",
+    customer_email: invoice.customerEmail || undefined,
+    line_items: lineItems,
+    metadata: {
+      invoiceId: String(invoice.id),
+      invoiceNumber: invoice.invoiceNumber
+    },
+    success_url: `${siteUrl}/desk/invoices/${invoice.id}?payment=success`,
+    cancel_url: `${siteUrl}/desk/invoices/${invoice.id}?payment=cancel`
+  };
+  if (discounts.length) sessionParams.discounts = discounts;
+
+  const session = await stripe.checkout.sessions.create(sessionParams);
+
+  return { session };
 }
 
 app.post("/api/leads", async (request, response) => {
@@ -362,10 +549,197 @@ app.get("/desk/tickets", requireAuth, async (request, response) => {
   response.send(layout("Tickets", `<section class="card"><h1>Tickets</h1><form method="get" class="row"><input name="q" value="${esc(q)}" placeholder="Search tickets"><select name="status"><option value="">All statuses</option>${statusOptions(ticketStatuses, status)}</select><button>Filter</button></form></section>${ticketTable(tickets)}`));
 });
 
+app.get("/desk/invoices", requireAuth, async (request, response) => {
+  const q = String(request.query.q || "");
+  const status = String(request.query.status || "");
+  const where = { AND: [status ? { status } : {}, searchWhere(q, ["invoiceNumber", "customerName", "customerEmail", "customerPhone"]) || {}] };
+  const invoices = await prisma.invoice.findMany({ where, orderBy: { createdAt: "desc" } });
+  response.send(layout("Invoices", `<section class="card"><div class="row"><h1>Invoices</h1><a class="button" href="/desk/invoices/new">New Invoice</a></div><form method="get" class="row"><input name="q" value="${esc(q)}" placeholder="Search invoice, name, email, phone"><select name="status"><option value="">All statuses</option>${statusOptions(invoiceStatuses, status)}</select><button>Filter</button></form></section>${invoiceTable(invoices)}`));
+});
+
+app.get("/desk/invoices/new", requireAuth, (request, response) => {
+  response.send(layout("New Invoice", invoiceForm("/desk/invoices")));
+});
+
+app.post("/desk/invoices", requireAuth, async (request, response) => {
+  const body = request.body;
+  const values = {
+    customerName: body.customerName,
+    customerEmail: body.customerEmail,
+    customerPhone: body.customerPhone,
+    dueDate: body.dueDate,
+    discount: body.discount,
+    tax: body.tax,
+    notes: body.notes,
+    descriptions: Array.isArray(body.description) ? body.description : [body.description],
+    quantities: Array.isArray(body.quantity) ? body.quantity : [body.quantity],
+    unitPrices: Array.isArray(body.unitPrice) ? body.unitPrice : [body.unitPrice]
+  };
+
+  if (!String(body.customerName || "").trim()) {
+    response.status(400).send(layout("New Invoice", invoiceForm("/desk/invoices", values, `<p class="danger">Customer name is required.</p>`)));
+    return;
+  }
+
+  const parsed = parseInvoiceInput(body);
+  if (parsed.error) {
+    response.status(400).send(layout("New Invoice", invoiceForm("/desk/invoices", values, `<p class="danger">${esc(parsed.error)}</p>`)));
+    return;
+  }
+
+  const invoice = await prisma.invoice.create({
+    data: {
+      invoiceNumber: await nextInvoiceNumber(),
+      customerName: body.customerName.trim(),
+      customerEmail: body.customerEmail?.trim() || null,
+      customerPhone: body.customerPhone?.trim() || null,
+      dueDate: body.dueDate ? new Date(`${body.dueDate}T12:00:00`) : null,
+      subtotalCents: parsed.subtotalCents,
+      taxCents: parsed.taxCents,
+      discountCents: parsed.discountCents,
+      totalCents: parsed.totalCents,
+      notes: body.notes?.trim() || null,
+      status: "Draft",
+      lineItems: {
+        create: parsed.lineItems
+      }
+    }
+  });
+
+  response.redirect(`/desk/invoices/${invoice.id}`);
+});
+
+app.get("/desk/invoices/:id", requireAuth, async (request, response) => {
+  const invoice = await prisma.invoice.findUnique({
+    where: { id: Number(request.params.id) },
+    include: { lineItems: true, customer: true, lead: true, ticket: true }
+  });
+  if (!invoice) return response.status(404).send(layout("Invoice not found", "<section class='card'>Invoice not found.</section>"));
+
+  const notice = request.query.payment === "success"
+    ? `<section class="card"><p><strong>Payment completed in Stripe Checkout.</strong> Mark the invoice paid after confirming the payment in Stripe.</p></section>`
+    : request.query.payment === "cancel"
+      ? `<section class="card"><p class="muted">Payment checkout was canceled.</p></section>`
+      : "";
+  const stripeMessage = request.query.stripe === "missing"
+    ? `<section class="card"><p class="danger">Stripe is not configured. Add STRIPE_SECRET_KEY in Railway to generate payment links.</p></section>`
+    : request.query.stripe === "error"
+      ? `<section class="card"><p class="danger">Stripe could not generate a payment link. Check the server logs and Stripe configuration.</p></section>`
+      : "";
+  const lineRows = invoice.lineItems.map((item) => `<tr><td>${esc(item.description)}</td><td>${item.quantity}</td><td>${dollars(item.unitPriceCents)}</td><td>${dollars(item.lineTotalCents)}</td></tr>`).join("");
+  response.send(layout(invoice.invoiceNumber, `${notice}${stripeMessage}
+    <section class="card">
+      <div class="row"><h1>${esc(invoice.invoiceNumber)}</h1><a class="button" href="/desk/invoices">Invoices</a></div>
+      <p><strong>${esc(invoice.customerName)}</strong><br>${esc(invoice.customerEmail || "")}<br>${esc(invoice.customerPhone || "")}</p>
+      <p>Status: <strong>${esc(invoice.status)}</strong>${invoice.dueDate ? ` Â· Due ${new Date(invoice.dueDate).toLocaleDateString()}` : ""}</p>
+      ${invoice.paymentLink ? `<p>Payment link: <a href="${esc(invoice.paymentLink)}" target="_blank" rel="noopener">${esc(invoice.paymentLink)}</a></p>` : `<p class="muted">No payment link generated yet.</p>`}
+      ${invoice.ticket ? `<p>Related ticket: <a href="/desk/tickets/${invoice.ticket.id}">${esc(invoice.ticket.ticketNumber)}</a></p>` : ""}
+      ${invoice.lead ? `<p>Related lead: <a href="/desk/leads/${invoice.lead.id}">${esc(invoice.lead.name)}</a></p>` : ""}
+    </section>
+    <section class="grid two">
+      <form method="post" action="/desk/invoices/${invoice.id}/status">
+        <h2>Status</h2>
+        <label>Invoice status <select name="status">${statusOptions(invoiceStatuses, invoice.status)}</select></label>
+        <button>Update Status</button>
+      </form>
+      <form method="post" action="/desk/invoices/${invoice.id}/payment-link">
+        <h2>Payment</h2>
+        <p class="muted">Generate a Stripe-hosted Checkout link for this invoice.</p>
+        <button>Generate Payment Link</button>
+      </form>
+    </section>
+    <section class="card">
+      <h2>Line Items</h2>
+      <table><thead><tr><th>Description</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead><tbody>${lineRows}</tbody></table>
+      <p>Subtotal: <strong>${dollars(invoice.subtotalCents)}</strong></p>
+      <p>Discount: <strong>${dollars(invoice.discountCents)}</strong></p>
+      <p>Tax: <strong>${dollars(invoice.taxCents)}</strong></p>
+      <p>Total: <strong>${dollars(invoice.totalCents)}</strong></p>
+      ${invoice.notes ? `<h2>Notes</h2><p>${esc(invoice.notes)}</p>` : ""}
+    </section>`));
+});
+
+app.post("/desk/invoices/:id/status", requireAuth, async (request, response) => {
+  const status = invoiceStatuses.includes(request.body.status) ? request.body.status : "Draft";
+  const data = { status };
+  if (status === "Sent") data.sentAt = new Date();
+  if (status === "Paid") data.paidAt = new Date();
+  await prisma.invoice.update({ where: { id: Number(request.params.id) }, data });
+  response.redirect(`/desk/invoices/${request.params.id}`);
+});
+
+app.post("/desk/invoices/:id/payment-link", requireAuth, async (request, response) => {
+  const invoice = await prisma.invoice.findUnique({
+    where: { id: Number(request.params.id) },
+    include: { lineItems: true }
+  });
+  if (!invoice) return response.status(404).send(layout("Invoice not found", "<section class='card'>Invoice not found.</section>"));
+
+  try {
+    const result = await generateInvoiceCheckoutSession(invoice);
+    if (result.error) {
+      response.redirect(`/desk/invoices/${invoice.id}?stripe=${stripe ? "error" : "missing"}`);
+      return;
+    }
+
+    await prisma.invoice.update({
+      where: { id: invoice.id },
+      data: {
+        paymentLink: result.session.url,
+        stripeCheckoutSessionId: result.session.id,
+        status: invoice.status === "Draft" ? "Sent" : invoice.status,
+        sentAt: invoice.sentAt || new Date()
+      }
+    });
+    response.redirect(`/desk/invoices/${invoice.id}`);
+  } catch (error) {
+    console.error(error);
+    response.redirect(`/desk/invoices/${invoice.id}?stripe=error`);
+  }
+});
+
+app.post("/desk/tickets/:id/create-invoice", requireAuth, async (request, response) => {
+  const ticket = await prisma.ticket.findUnique({
+    where: { id: Number(request.params.id) },
+    include: { customer: true, lead: true }
+  });
+  if (!ticket) return response.redirect("/desk/tickets");
+  const customerName = ticket.customer?.name || ticket.lead?.name || "Customer";
+  const customerEmail = ticket.customer?.email || ticket.lead?.email || null;
+  const customerPhone = ticket.customer?.phone || ticket.lead?.phone || null;
+  const priceCents = parseMoneyToCents(ticket.finalPrice ?? ticket.priceQuoted ?? 0) || 0;
+  const invoice = await prisma.invoice.create({
+    data: {
+      invoiceNumber: await nextInvoiceNumber(),
+      customerId: ticket.customerId,
+      leadId: ticket.leadId,
+      ticketId: ticket.id,
+      customerName,
+      customerEmail,
+      customerPhone,
+      subtotalCents: priceCents,
+      taxCents: 0,
+      discountCents: 0,
+      totalCents: priceCents,
+      notes: ticket.customerNotes || ticket.internalNotes || null,
+      status: "Draft",
+      lineItems: {
+        create: [{
+          description: ticket.serviceType || ticket.title || "IT Support",
+          quantity: 1,
+          unitPriceCents: priceCents,
+          lineTotalCents: priceCents
+        }]
+      }
+    }
+  });
+  response.redirect(`/desk/invoices/${invoice.id}`);
+});
+
 app.get("/desk/tickets/:id", requireAuth, async (request, response) => {
   const ticket = await prisma.ticket.findUnique({ where: { id: Number(request.params.id) } });
   if (!ticket) return response.status(404).send(layout("Ticket not found", "<section class='card'>Ticket not found.</section>"));
-  response.send(layout(ticket.ticketNumber, `<form method="post" action="/desk/tickets/${ticket.id}/update">
+  response.send(layout(ticket.ticketNumber, `<section class="card row"><form method="post" action="/desk/tickets/${ticket.id}/create-invoice"><button>Create Invoice</button></form></section><form method="post" action="/desk/tickets/${ticket.id}/update">
     <h1>${esc(ticket.ticketNumber)}</h1>
     <label>Title <input name="title" value="${esc(ticket.title)}"></label>
     <label>Status <select name="status">${statusOptions(ticketStatuses, ticket.status)}</select></label>
@@ -428,4 +802,5 @@ app.use((request, response) => {
 app.listen(port, () => {
   console.log(`909 Signal IT site running on port ${port}`);
   console.log(`Lead notification configured: ${isLeadNotificationConfigured() ? "yes" : "no"}`);
+  console.log(`Stripe payments configured: ${stripe ? "yes" : "no"}`);
 });

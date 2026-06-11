@@ -25,6 +25,7 @@ model Lead {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   tickets          Ticket[]
+  invoices         Invoice[]
 }
 
 model Customer {
@@ -40,6 +41,7 @@ model Customer {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   tickets      Ticket[]
+  invoices     Invoice[]
 }
 
 model Ticket {
@@ -65,4 +67,46 @@ model Ticket {
   updatedAt       DateTime  @updatedAt
   customer        Customer? @relation(fields: [customerId], references: [id])
   lead            Lead?     @relation(fields: [leadId], references: [id])
+  invoices        Invoice[]
+}
+
+model Invoice {
+  id                      Int               @id @default(autoincrement())
+  invoiceNumber           String            @unique
+  customerId              Int?
+  leadId                  Int?
+  ticketId                Int?
+  customerName            String
+  customerEmail           String?
+  customerPhone           String?
+  status                  String            @default("Draft")
+  dueDate                 DateTime?
+  subtotalCents           Int               @default(0)
+  taxCents                Int               @default(0)
+  discountCents           Int               @default(0)
+  totalCents              Int               @default(0)
+  notes                   String?
+  paymentLink             String?
+  stripeCheckoutSessionId String?
+  stripePaymentLinkId     String?
+  sentAt                  DateTime?
+  paidAt                  DateTime?
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+  customer                Customer?         @relation(fields: [customerId], references: [id])
+  lead                    Lead?             @relation(fields: [leadId], references: [id])
+  ticket                  Ticket?           @relation(fields: [ticketId], references: [id])
+  lineItems               InvoiceLineItem[]
+}
+
+model InvoiceLineItem {
+  id             Int      @id @default(autoincrement())
+  invoiceId      Int
+  description    String
+  quantity       Int      @default(1)
+  unitPriceCents Int
+  lineTotalCents Int
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  invoice        Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 }
