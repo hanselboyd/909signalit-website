@@ -452,6 +452,54 @@ h3 {
   font-size: 1.05rem;
 }
 
+.services-list article a {
+  display: inline-block;
+  margin-top: 12px;
+  color: var(--blue);
+  font-weight: 800;
+}
+
+.local-service-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.42fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.local-service-content,
+.price-panel {
+  display: grid;
+  gap: 22px;
+}
+
+.problem-list {
+  margin: 0;
+  padding-left: 22px;
+}
+
+.problem-list li + li {
+  margin-top: 8px;
+}
+
+.price-panel {
+  padding: 24px;
+  background: var(--gray);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.price-panel strong {
+  color: var(--blue);
+  font-size: 1.35rem;
+}
+
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin: 14px 0;
+}
+
 .split-section {
   min-height: 420px;
   display: flex;
@@ -697,6 +745,7 @@ textarea {
   .feature-grid,
   .services-list,
   .area-grid,
+  .local-service-layout,
   .contact-layout {
     grid-template-columns: 1fr;
   }
