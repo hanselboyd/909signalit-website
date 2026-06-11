@@ -10,6 +10,7 @@ const app = express();
 const prisma = new PrismaClient();
 const port = process.env.PORT || 3000;
 const root = join(process.cwd(), "dist");
+const publicAssetsRoot = join(process.cwd(), "public", "assets");
 const siteUrl = process.env.PUBLIC_SITE_URL || "https://909signalit.com";
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 const googleReviewLink = process.env.GOOGLE_REVIEW_LINK || "";
@@ -980,6 +981,12 @@ app.use((error, request, response, next) => {
   }
   next(error);
 });
+
+app.use("/assets", express.static(publicAssetsRoot, {
+  setHeaders(response) {
+    response.setHeader("Cache-Control", "public, max-age=31536000");
+  }
+}));
 
 app.use(express.static(root, {
   extensions: ["html"],
