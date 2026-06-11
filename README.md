@@ -61,6 +61,7 @@ SESSION_SECRET=
 LEAD_NOTIFY_EMAIL=support@909signalit.com
 RESEND_API_KEY=
 FROM_EMAIL=
+GOOGLE_REVIEW_LINK=
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
 PUBLIC_SITE_URL=https://909signalit.com
@@ -77,6 +78,18 @@ Lead notification emails use Resend. Create a Resend account, verify the sending
 - `LEAD_NOTIFY_EMAIL=support@909signalit.com`
 
 If these variables are not set, or if Resend delivery fails, lead creation still succeeds. The server logs a safe email error without showing secrets.
+
+### Google Review Requests
+
+909 Signal Desk can show copy-ready Google review request messages on completed or closed tickets.
+
+1. Open Google Business Profile.
+2. Choose Ask for reviews.
+3. Copy the review link.
+4. In Railway, add `GOOGLE_REVIEW_LINK=your_link`.
+5. Redeploy the website service.
+
+If `GOOGLE_REVIEW_LINK` is missing, completed and closed tickets show a setup message instead of review request copy.
 
 ### Stripe Invoice Payments
 

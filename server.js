@@ -12,6 +12,7 @@ const port = process.env.PORT || 3000;
 const root = join(process.cwd(), "dist");
 const siteUrl = process.env.PUBLIC_SITE_URL || "https://909signalit.com";
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+const googleReviewLink = process.env.GOOGLE_REVIEW_LINK || "";
 
 const leadStatuses = ["New Lead", "Contacted", "Scheduled", "In Progress", "Waiting on Customer", "Completed", "Invoice Sent", "Closed", "Lost"];
 const ticketStatuses = ["New", "Scheduled", "In Progress", "Waiting on Customer", "Completed", "Closed", "Canceled"];
@@ -245,14 +246,21 @@ function leadTable(leads) {
 }
 
 function ticketTable(tickets) {
-  return `<table><thead><tr><th>Ticket</th><th>Title</th><th>Status</th><th>Appointment</th><th>Updated</th></tr></thead><tbody>${tickets.map((ticket) => `
+  return `<table><thead><tr><th>Ticket</th><th>Title</th><th>Status</th><th>Review</th><th>Appointment</th><th>Updated</th></tr></thead><tbody>${tickets.map((ticket) => `
     <tr>
       <td><a href="/desk/tickets/${ticket.id}">${esc(ticket.ticketNumber)}</a></td>
       <td>${esc(ticket.title)}<br><span class="muted">${esc(ticket.serviceType || "")}</span></td>
       <td>${esc(ticket.status)}</td>
+      <td>${reviewStatusLabel(ticket)}</td>
       <td>${ticket.appointmentAt ? new Date(ticket.appointmentAt).toLocaleString() : ""}</td>
       <td>${new Date(ticket.updatedAt).toLocaleDateString()}</td>
-    </tr>`).join("") || `<tr><td colspan="5">No tickets found.</td></tr>`}</tbody></table>`;
+    </tr>`).join("") || `<tr><td colspan="6">No tickets found.</td></tr>`}</tbody></table>`;
+}
+
+function reviewStatusLabel(ticket) {
+  if (ticket.reviewReceived) return "Review Received";
+  if (ticket.reviewRequested) return "Review Requested";
+  return "Review Not Requested";
 }
 
 function invoiceTable(invoices) {
@@ -403,6 +411,69 @@ support@909signalit.com`;
   </script>`;
 }
 
+function ticketReviewRequestSection(ticket) {
+  if (!["Completed", "Closed"].includes(ticket.status)) return "";
+
+  if (!googleReviewLink) {
+    return `<section class="card"><h2>Request Google Review</h2><p class="muted">Add GOOGLE_REVIEW_LINK in Railway to enable review request messages.</p></section>`;
+  }
+
+  const customerName = ticket.customer?.name || ticket.lead?.name || "there";
+  const textMessage = `Hi, this is 909 Signal IT. Thank you for choosing us for your IT support. If the service was helpful, would you mind leaving a quick Google review? It really helps a local Ontario business grow: ${googleReviewLink}`;
+  const emailSubject = "Thank you for choosing 909 Signal IT";
+  const emailBody = `Hello ${customerName},
+
+Thank you for choosing 909 Signal IT for your technology support.
+
+If the service was helpful, would you mind leaving a quick Google review? It really helps local customers find reliable IT support in Ontario and nearby cities.
+
+Review link:
+${googleReviewLink}
+
+Thank you,
+909 Signal IT
+909-260-8660
+support@909signalit.com`;
+
+  return `<section class="card">
+    <h2>Request Google Review</h2>
+    <p class="muted">Review status: ${reviewStatusLabel(ticket)}</p>
+    <div class="grid two">
+      <div>
+        <h3>Text Message</h3>
+        <textarea readonly id="review-text-message">${esc(textMessage)}</textarea>
+        <div class="row"><button type="button" data-copy-target="review-text-message">Copy Review Text</button><span class="muted" data-copy-status="review-text-message"></span></div>
+      </div>
+      <div>
+        <h3>Email Message</h3>
+        <label>Subject <input readonly value="${esc(emailSubject)}"></label>
+        <textarea readonly id="review-email-body">${esc(emailBody)}</textarea>
+        <div class="row"><button type="button" data-copy-target="review-email-body">Copy Review Email</button><span class="muted" data-copy-status="review-email-body"></span></div>
+      </div>
+    </div>
+    <label>Review Link <input readonly id="review-link" value="${esc(googleReviewLink)}"></label>
+    <div class="row"><button type="button" data-copy-target="review-link">Copy Review Link</button><span class="muted" data-copy-status="review-link"></span></div>
+    <div class="row">
+      <form method="post" action="/desk/tickets/${ticket.id}/review-requested"><button>Mark Review Requested</button></form>
+      <form method="post" action="/desk/tickets/${ticket.id}/review-received"><button>Mark Review Received</button></form>
+    </div>
+  </section>
+  <script>
+    document.querySelectorAll("[data-copy-target]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const target = document.getElementById(button.dataset.copyTarget);
+        const status = document.querySelector('[data-copy-status="' + button.dataset.copyTarget + '"]');
+        if (!target || !navigator.clipboard) return;
+        await navigator.clipboard.writeText(target.value);
+        if (status) {
+          status.textContent = "Copied.";
+          window.setTimeout(() => { status.textContent = ""; }, 1800);
+        }
+      });
+    });
+  </script>`;
+}
+
 async function generateInvoiceCheckoutSession(invoice) {
   if (!stripe) {
     return { error: "Stripe is not configured. Add STRIPE_SECRET_KEY in Railway to generate payment links." };
@@ -528,11 +599,13 @@ app.get("/desk/logout", (request, response) => {
 });
 
 app.get("/desk", requireAuth, async (request, response) => {
-  const [newLeads, scheduledJobs, inProgress, completedThisMonth, recentLeads, recentTickets] = await Promise.all([
+  const [newLeads, scheduledJobs, inProgress, completedThisMonth, reviewRequestsNeeded, reviewsReceived, recentLeads, recentTickets] = await Promise.all([
     prisma.lead.count({ where: { status: "New Lead" } }),
     prisma.ticket.count({ where: { status: "Scheduled" } }),
     prisma.ticket.count({ where: { status: "In Progress" } }),
     prisma.ticket.count({ where: { status: "Completed", updatedAt: { gte: nowMonthStart() } } }),
+    prisma.ticket.count({ where: { status: { in: ["Completed", "Closed"] }, reviewRequested: false } }),
+    prisma.ticket.count({ where: { reviewReceived: true } }),
     prisma.lead.findMany({ orderBy: { createdAt: "desc" }, take: 8 }),
     prisma.ticket.findMany({ orderBy: { updatedAt: "desc" }, take: 8 })
   ]);
@@ -541,6 +614,8 @@ app.get("/desk", requireAuth, async (request, response) => {
     <div class="card metric"><span>Scheduled jobs</span><strong>${scheduledJobs}</strong></div>
     <div class="card metric"><span>In progress</span><strong>${inProgress}</strong></div>
     <div class="card metric"><span>Completed this month</span><strong>${completedThisMonth}</strong></div>
+    <div class="card metric"><span>Review requests needed</span><strong>${reviewRequestsNeeded}</strong></div>
+    <div class="card metric"><span>Reviews received</span><strong>${reviewsReceived}</strong></div>
   </section><section class="card"><h1>Recent Leads</h1>${leadTable(recentLeads)}</section>
   <section class="card"><h1>Recent Tickets</h1>${ticketTable(recentTickets)}</section>`));
 });
@@ -728,6 +803,9 @@ app.get("/desk/invoices/:id", requireAuth, async (request, response) => {
     : request.query.stripe === "error"
       ? `<section class="card"><p class="danger">Stripe could not generate a payment link. Check the server logs and Stripe configuration.</p></section>`
       : "";
+  const paidReviewPrompt = invoice.status === "Paid"
+    ? `<section class="card"><h2>Review Follow-Up</h2><p>Payment received. If this job is complete, request a Google review from the related ticket.</p>${invoice.ticket ? `<a class="button" href="/desk/tickets/${invoice.ticket.id}">Open Ticket</a>` : `<p class="muted">No related ticket is linked to this invoice.</p>`}</section>`
+    : "";
   const lineRows = invoice.lineItems.map((item) => `<tr><td>${esc(item.description)}</td><td>${item.quantity}</td><td>${dollars(item.unitPriceCents)}</td><td>${dollars(item.lineTotalCents)}</td></tr>`).join("");
   response.send(layout(invoice.invoiceNumber, `${notice}${stripeMessage}
     <section class="card">
@@ -751,6 +829,7 @@ app.get("/desk/invoices/:id", requireAuth, async (request, response) => {
       </form>
     </section>
     ${invoicePaymentMessages(invoice)}
+    ${paidReviewPrompt}
     <section class="card">
       <h2>Line Items</h2>
       <table><thead><tr><th>Description</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead><tbody>${lineRows}</tbody></table>
@@ -840,7 +919,7 @@ app.post("/desk/tickets/:id/create-invoice", requireAuth, async (request, respon
 });
 
 app.get("/desk/tickets/:id", requireAuth, async (request, response) => {
-  const ticket = await prisma.ticket.findUnique({ where: { id: Number(request.params.id) } });
+  const ticket = await prisma.ticket.findUnique({ where: { id: Number(request.params.id) }, include: { customer: true, lead: true } });
   if (!ticket) return response.status(404).send(layout("Ticket not found", "<section class='card'>Ticket not found.</section>"));
   response.send(layout(ticket.ticketNumber, `<section class="card row"><form method="post" action="/desk/tickets/${ticket.id}/create-invoice"><button>Create Invoice</button></form></section><form method="post" action="/desk/tickets/${ticket.id}/update">
     <h1>${esc(ticket.ticketNumber)}</h1>
@@ -856,7 +935,7 @@ app.get("/desk/tickets/:id", requireAuth, async (request, response) => {
     <label><input type="checkbox" name="reviewRequested" ${ticket.reviewRequested ? "checked" : ""}> Review requested</label>
     <label><input type="checkbox" name="reviewReceived" ${ticket.reviewReceived ? "checked" : ""}> Review received</label>
     <button>Save Ticket</button>
-  </form>`));
+  </form>${ticketReviewRequestSection(ticket)}`));
 });
 
 app.post("/desk/tickets/:id/update", requireAuth, async (request, response) => {
@@ -874,6 +953,22 @@ app.post("/desk/tickets/:id/update", requireAuth, async (request, response) => {
     reviewReceived: Boolean(request.body.reviewReceived)
   };
   await prisma.ticket.update({ where: { id: Number(request.params.id) }, data });
+  response.redirect(`/desk/tickets/${request.params.id}`);
+});
+
+app.post("/desk/tickets/:id/review-requested", requireAuth, async (request, response) => {
+  await prisma.ticket.update({
+    where: { id: Number(request.params.id) },
+    data: { reviewRequested: true }
+  });
+  response.redirect(`/desk/tickets/${request.params.id}`);
+});
+
+app.post("/desk/tickets/:id/review-received", requireAuth, async (request, response) => {
+  await prisma.ticket.update({
+    where: { id: Number(request.params.id) },
+    data: { reviewRequested: true, reviewReceived: true }
+  });
   response.redirect(`/desk/tickets/${request.params.id}`);
 });
 
