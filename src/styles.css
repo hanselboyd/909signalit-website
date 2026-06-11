@@ -433,6 +433,7 @@ h3 {
 }
 
 .service-card,
+.popular-service-card,
 .services-list article,
 .feature-grid article,
 .area-grid article,
@@ -443,6 +444,48 @@ h3 {
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 12px 28px rgba(7, 29, 60, 0.06);
+}
+
+.popular-services {
+  padding-top: 0;
+}
+
+.popular-service-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+
+.popular-service-card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  border-top: 4px solid var(--green);
+}
+
+.popular-service-card h3 {
+  margin-bottom: 0;
+}
+
+.popular-service-card h3 a {
+  color: var(--navy);
+  text-decoration: none;
+}
+
+.popular-service-card h3 a:hover,
+.popular-service-card h3 a:focus {
+  color: var(--blue);
+}
+
+.popular-service-card p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.learn-more {
+  color: var(--blue);
+  font-weight: 800;
+  text-decoration: none;
 }
 
 .services-list article strong {
@@ -742,6 +785,7 @@ textarea {
 
   .trust-bar,
   .card-grid,
+  .popular-service-grid,
   .feature-grid,
   .services-list,
   .area-grid,
