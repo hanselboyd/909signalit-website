@@ -3,6 +3,7 @@ import session from "express-session";
 import { PrismaClient } from "@prisma/client";
 import Stripe from "stripe";
 import { existsSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { extname, join } from "node:path";
 import { isLeadNotificationConfigured, sendLeadNotification } from "./src/server/email.js";
 
@@ -43,6 +44,8 @@ const invoiceServiceOptions = standardServiceMenu.map((service) => service.name)
 const quickServiceNames = ["Remote IT Support", "Computer Repair / Tune-Up", "Wi-Fi Troubleshooting", "Printer Setup", "Network Support", "POS Support"];
 const expenseCategories = ["Parts / Hardware", "Software / Subscriptions", "Fuel / Travel", "Tools / Equipment", "Phone / Internet", "Marketing / Ads", "Office Supplies", "Contract Labor", "Fees / Processing", "Meals", "Other"];
 const expensePaymentMethods = ["Cash", "Debit Card", "Credit Card", "Bank Transfer", "Stripe/Processing Fee", "Other"];
+const remoteDeviceTypes = ["Windows PC", "Mac", "Chromebook", "Android", "iPhone/iPad", "Other"];
+const remoteSessionStatuses = ["Requested", "Approved", "Active", "Ended", "Cancelled"];
 const urgencyOptions = ["Normal", "Same-day if available", "Emergency"];
 const contactOptions = ["Call", "Text", "Email"];
 const sourceOptions = ["Website", "Google Business Profile", "Phone", "Text", "Referral", "Facebook", "Nextdoor", "Walk-in", "Other"];
@@ -313,6 +316,7 @@ function layout(title, body) {
       <a href="/desk/expenses">Expenses</a>
       <a href="/desk/reports">Reports</a>
       <a href="/desk/follow-ups">Follow-Ups</a>
+      <a href="/desk/remote-sessions">Remote Sessions</a>
       <a href="/desk/service-menu">Service Menu</a>
       <a href="/desk/logout">Logout</a>
     </nav>
@@ -620,6 +624,54 @@ function monthlyReportRows(report) {
     ["Review Requests Sent", report.reviewRequestsSent],
     ["Reviews Received", report.reviewsReceived]
   ];
+}
+
+async function generateRemoteSessionCode() {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const code = `909-${randomBytes(4).toString("hex").toUpperCase().slice(0, 6)}`;
+    const existing = await prisma.remoteSession.findUnique({ where: { sessionCode: code } });
+    if (!existing) return code;
+  }
+  return `909-${Date.now().toString(36).toUpperCase().slice(-4)}`;
+}
+
+function publicRemotePage(message = "") {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>909 Signal Remote Assist</title><style>
+    :root{--navy:#071d3c;--blue:#1268f3;--green:#35b51f;--gray:#f3f6fa;--border:#dbe4ef;--text:#172234}
+    *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);background:var(--gray);line-height:1.6}
+    header,main{width:min(980px,calc(100% - 32px));margin:0 auto}header{padding:28px 0}.brand{font-weight:900;color:var(--navy);text-decoration:none;font-size:1.3rem}.brand span{color:var(--blue)}
+    .card,form{background:white;border:1px solid var(--border);border-radius:8px;box-shadow:0 12px 28px rgba(7,29,60,.06)}.card{padding:22px;margin-bottom:18px}form{padding:22px;display:grid;gap:14px}.danger{color:#b42318}
+    h1{margin:0;color:var(--navy);font-size:clamp(2rem,6vw,4rem);line-height:1}h2{margin:0 0 10px;color:var(--navy)}.muted{color:#5d6b7f}.warning{border-left:5px solid var(--green)}
+    label{display:grid;gap:6px;font-weight:800;color:var(--navy)}input,select,textarea{width:100%;padding:11px 12px;border:1px solid var(--border);border-radius:8px;font:inherit}textarea{min-height:120px}
+    button,.button{display:inline-flex;width:max-content;min-height:42px;align-items:center;justify-content:center;padding:10px 16px;color:white;background:var(--blue);border:0;border-radius:8px;font-weight:900;text-decoration:none;cursor:pointer}
+    .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}@media(max-width:760px){.grid{grid-template-columns:1fr}}
+  </style></head><body><header><a class="brand" href="/">909 <span>Signal</span> IT</a></header><main>
+    <section class="card"><p class="muted">Consent-first remote support</p><h1>909 Signal Remote Assist</h1><p>Only start a remote support session if you are currently working with 909 Signal IT.</p></section>
+    ${message}
+    <section class="card warning"><h2>Before You Continue</h2><ul><li>Never share passwords in chat or notes.</li><li>You can end the session at any time.</li><li>Remote access requires your approval.</li><li>Close private documents before support begins.</li></ul></section>
+    <form method="post" action="/remote"><h2>Request Remote Session</h2>
+      <div class="grid"><label>Client name <input name="clientName" required></label><label>Phone <input name="phone" required></label></div>
+      <div class="grid"><label>Email <input name="email" type="email"></label><label>Company <input name="company"></label></div>
+      <div class="grid"><label>Ticket number <input name="ticketNumber"></label><label>Device type <select name="deviceType"><option value="">Select one</option>${statusOptions(remoteDeviceTypes, "")}</select></label></div>
+      <label>Issue summary <textarea name="issueSummary" required></textarea></label>
+      <label><span><input type="checkbox" name="consentAccepted" value="yes" required> I authorize 909 Signal IT to assist me remotely for troubleshooting, repair, setup, or maintenance. I understand I can end the session at any time. I am responsible for closing private documents and backing up important files before service begins. I will not share passwords through this form.</span></label>
+      <button type="submit">Request Remote Session</button>
+    </form>
+    <section class="card"><p>Call/text <a href="tel:+19092608660">909-260-8660</a> if you need help starting your session.</p></section>
+  </main></body></html>`;
+}
+
+function remoteSessionTable(sessions) {
+  return `<table><thead><tr><th>Session</th><th>Client</th><th>Phone</th><th>Device</th><th>Status</th><th>Consent</th><th>Created</th><th></th></tr></thead><tbody>${sessions.map((session) => `
+    <tr><td><a href="/desk/remote-sessions/${session.id}">${esc(session.sessionCode)}</a></td><td>${esc(session.clientName)}</td><td>${esc(session.phone)}</td><td>${esc(session.deviceType || "")}</td><td>${esc(session.status)}</td><td>${session.consentAccepted ? "Accepted" : "Not accepted"}</td><td>${displayDate(session.createdAt)}</td><td><a href="/desk/remote-sessions/${session.id}">View</a></td></tr>`).join("") || `<tr><td colspan="8">No remote sessions found.</td></tr>`}</tbody></table>`;
+}
+
+function remoteSessionLinkSummary(session) {
+  return [
+    session.customer ? `<a href="/desk/customers/${session.customer.id}">${esc(session.customer.name)}</a>` : "",
+    session.ticket ? `<a href="/desk/tickets/${session.ticket.id}">${esc(session.ticket.ticketNumber)}</a>` : "",
+    session.lead ? `<a href="/desk/leads/${session.lead.id}">${esc(session.lead.name)}</a>` : ""
+  ].filter(Boolean).join("<br>") || `<span class="muted">No linked CRM records.</span>`;
 }
 
 function followUpForm(title, action, values = {}, extra = "") {
@@ -1371,6 +1423,39 @@ app.post("/api/leads", async (request, response) => {
   }
 });
 
+app.get("/remote", (request, response) => {
+  response.send(publicRemotePage());
+});
+
+app.post("/remote", async (request, response) => {
+  const body = request.body;
+  const required = ["clientName", "phone", "issueSummary"];
+  const missing = required.filter((field) => !String(body[field] || "").trim());
+  if (missing.length || body.consentAccepted !== "yes") {
+    response.status(400).send(publicRemotePage(`<section class="card"><p class="danger">Please complete the required fields and accept the consent terms.</p></section>`));
+    return;
+  }
+  const ticketNumber = String(body.ticketNumber || "").trim();
+  const ticket = ticketNumber ? await prisma.ticket.findFirst({ where: { ticketNumber } }) : null;
+  const session = await prisma.remoteSession.create({
+    data: {
+      sessionCode: await generateRemoteSessionCode(),
+      clientName: body.clientName.trim(),
+      phone: body.phone.trim(),
+      email: body.email?.trim() || null,
+      company: body.company?.trim() || null,
+      deviceType: remoteDeviceTypes.includes(body.deviceType) ? body.deviceType : null,
+      issueSummary: body.issueSummary?.trim() || null,
+      consentAccepted: true,
+      consentAcceptedAt: new Date(),
+      ticketId: ticket?.id || null,
+      customerId: ticket?.customerId || null,
+      leadId: ticket?.leadId || null
+    }
+  });
+  response.send(publicRemotePage(`<section class="card"><h2>Your remote support request has been created.</h2><p>Give this code to 909 Signal IT: <strong>${esc(session.sessionCode)}</strong></p><p>A technician will guide you through the next step.</p></section>`));
+});
+
 app.get("/desk/login", (request, response) => {
   response.send(layout("Login", `<section class="card"><h1>909 Signal Desk Login</h1>${!adminConfigured() ? `<p class="danger">Admin environment variables are not fully configured.</p>` : ""}</section>
     <form method="post" action="/desk/login">
@@ -1446,6 +1531,9 @@ app.get("/desk", requireAuth, async (request, response) => {
     invoiceFollowUps,
     ticketFollowUps,
     reviewFollowUps,
+    remoteSessionsRequested,
+    remoteSessionsActive,
+    remoteSessionsCompletedThisMonth,
     recentLeads,
     recentTickets,
     recentInvoices
@@ -1474,6 +1562,9 @@ app.get("/desk", requireAuth, async (request, response) => {
     prisma.invoice.count({ where: invoiceFollowUpWhere }),
     prisma.ticket.count({ where: ticketFollowUpWhere }),
     prisma.ticket.count({ where: reviewFollowUpWhere }),
+    prisma.remoteSession.count({ where: { status: "Requested" } }),
+    prisma.remoteSession.count({ where: { status: "Active" } }),
+    prisma.remoteSession.count({ where: { status: "Ended", endedAt: { gte: month.start, lt: month.end } } }),
     prisma.lead.findMany({ orderBy: { createdAt: "desc" }, take: 12 }),
     prisma.ticket.findMany({ include: { customer: true, lead: true }, orderBy: { updatedAt: "desc" }, take: 20 }),
     prisma.invoice.findMany({ orderBy: { updatedAt: "desc" }, take: 20 })
@@ -1520,6 +1611,12 @@ app.get("/desk", requireAuth, async (request, response) => {
     ${metricCard("Review requests needed", ticketsNeedingReview)}
     ${metricCard("Review requests sent", reviewRequestsSent)}
     ${metricCard("Reviews received", reviewsReceived)}
+  </div></section>
+  <section class="card"><h2>Remote Assist</h2><div class="grid">
+    ${metricCard("Remote sessions requested", remoteSessionsRequested)}
+    ${metricCard("Remote sessions active", remoteSessionsActive)}
+    ${metricCard("Remote sessions completed this month", remoteSessionsCompletedThisMonth)}
+    ${attentionCard("Remote Sessions", remoteSessionsRequested + remoteSessionsActive, "/desk/remote-sessions")}
   </div></section>
   <section class="card"><h2>Needs Attention</h2><div class="grid">
     ${attentionCard("Open leads", openLeads, "/desk/leads")}
@@ -1574,6 +1671,90 @@ app.get("/desk/follow-ups", requireAuth, async (request, response) => {
   ${copyScript()}`));
 });
 
+app.get("/desk/remote-sessions", requireAuth, async (request, response) => {
+  const status = String(request.query.status || "");
+  const sessions = await prisma.remoteSession.findMany({
+    where: status && remoteSessionStatuses.includes(status) ? { status } : {},
+    orderBy: { createdAt: "desc" }
+  });
+  response.send(layout("Remote Sessions", `<section class="card"><div class="row"><h1>Remote Sessions</h1><a class="button" href="/remote" target="_blank" rel="noopener">Open Client Portal</a></div><p class="muted">Consent-first tracking for 909 Signal Remote Assist. No hidden, unattended, or stealth access is provided.</p><form method="get" class="row"><label>Status <select name="status"><option value="">All statuses</option>${statusOptions(remoteSessionStatuses, status)}</select></label><button>Filter</button></form></section>${remoteSessionTable(sessions)}`));
+});
+
+app.get("/desk/remote-sessions/:id", requireAuth, async (request, response) => {
+  const session = await prisma.remoteSession.findUnique({
+    where: { id: request.params.id },
+    include: { ticket: true, customer: true, lead: true }
+  });
+  if (!session) return response.status(404).send(layout("Remote session not found", "<section class='card'>Remote session not found.</section>"));
+  response.send(layout(session.sessionCode, `<section class="card">
+    <div class="row"><h1>${esc(session.sessionCode)}</h1><a class="button" href="/desk/remote-sessions">Back to Remote Sessions</a></div>
+    <p><strong>Client:</strong> ${esc(session.clientName)}<br><strong>Phone:</strong> ${esc(session.phone)}<br><strong>Email:</strong> ${esc(session.email || "")}<br><strong>Company:</strong> ${esc(session.company || "")}</p>
+    <p><strong>Device:</strong> ${esc(session.deviceType || "")}<br><strong>Status:</strong> ${esc(session.status)}<br><strong>Consent:</strong> ${session.consentAccepted ? `Accepted ${displayDateTime(session.consentAcceptedAt)}` : "Not accepted"}</p>
+    <p><strong>Issue summary:</strong><br>${esc(session.issueSummary || "")}</p>
+    <p><strong>Linked records:</strong><br>${remoteSessionLinkSummary(session)}</p>
+    <p><strong>Approved:</strong> ${displayDateTime(session.approvedAt)}<br><strong>Started:</strong> ${displayDateTime(session.startedAt)}<br><strong>Ended:</strong> ${displayDateTime(session.endedAt)}<br><strong>Created:</strong> ${displayDateTime(session.createdAt)}<br><strong>Updated:</strong> ${displayDateTime(session.updatedAt)}</p>
+  </section>
+  <section class="card row">
+    <form method="post" action="/desk/remote-sessions/${session.id}/status"><input type="hidden" name="status" value="Approved"><button>Approve Session</button></form>
+    <form method="post" action="/desk/remote-sessions/${session.id}/status"><input type="hidden" name="status" value="Active"><button>Mark Active</button></form>
+    <form method="post" action="/desk/remote-sessions/${session.id}/status"><input type="hidden" name="status" value="Ended"><button>Mark Ended</button></form>
+    <form method="post" action="/desk/remote-sessions/${session.id}/status"><input type="hidden" name="status" value="Cancelled"><button>Cancel Session</button></form>
+    <form method="post" action="/desk/remote-sessions/${session.id}/ticket"><button>Create Ticket from Remote Session</button></form>
+  </section>
+  <form method="post" action="/desk/remote-sessions/${session.id}/update">
+    <h2>Technician Notes</h2>
+    <p class="muted">Do not store client passwords or sensitive personal information in session notes.</p>
+    <label>Technician name <input name="technicianName" value="${esc(session.technicianName || "")}"></label>
+    <label>Remote tool <input name="remoteTool" value="${esc(session.remoteTool || "")}" placeholder="Visible, client-approved tool only"></label>
+    <label>Connection URL <input name="connectionUrl" value="${esc(session.connectionUrl || "")}"></label>
+    <label>Notes <textarea name="notes">${esc(session.notes || "")}</textarea></label>
+    <button>Save Notes</button>
+  </form>`));
+});
+
+app.post("/desk/remote-sessions/:id/status", requireAuth, async (request, response) => {
+  const status = remoteSessionStatuses.includes(request.body.status) ? request.body.status : "Requested";
+  const data = { status };
+  if (status === "Approved") data.approvedAt = new Date();
+  if (status === "Active") data.startedAt = new Date();
+  if (status === "Ended") data.endedAt = new Date();
+  await prisma.remoteSession.update({ where: { id: request.params.id }, data });
+  response.redirect(`/desk/remote-sessions/${request.params.id}`);
+});
+
+app.post("/desk/remote-sessions/:id/update", requireAuth, async (request, response) => {
+  await prisma.remoteSession.update({
+    where: { id: request.params.id },
+    data: {
+      technicianName: request.body.technicianName?.trim() || null,
+      remoteTool: request.body.remoteTool?.trim() || null,
+      connectionUrl: request.body.connectionUrl?.trim() || null,
+      notes: request.body.notes?.trim() || null
+    }
+  });
+  response.redirect(`/desk/remote-sessions/${request.params.id}`);
+});
+
+app.post("/desk/remote-sessions/:id/ticket", requireAuth, async (request, response) => {
+  const session = await prisma.remoteSession.findUnique({ where: { id: request.params.id } });
+  if (!session) return response.redirect("/desk/remote-sessions");
+  if (session.ticketId) return response.redirect(`/desk/tickets/${session.ticketId}`);
+  const ticket = await prisma.ticket.create({
+    data: {
+      ticketNumber: `909-${Date.now()}`,
+      customerId: session.customerId,
+      leadId: session.leadId,
+      title: "Remote IT Support",
+      serviceType: "Remote IT Support",
+      issue: session.issueSummary,
+      customerNotes: `Remote Assist session ${session.sessionCode}`,
+      status: "New"
+    }
+  });
+  await prisma.remoteSession.update({ where: { id: session.id }, data: { ticketId: ticket.id } });
+  response.redirect(`/desk/tickets/${ticket.id}`);
+});
+
 app.get("/desk/reports", requireAuth, async (request, response) => {
   const report = await monthlyReport(request.query.month);
   response.send(layout("Reports", `<section class="card">
@@ -1588,6 +1769,7 @@ app.get("/desk/reports", requireAuth, async (request, response) => {
       <a class="button" href="/desk/reports/export/tickets.csv">Export Tickets CSV</a>
       <a class="button" href="/desk/reports/export/invoices.csv">Export Invoices CSV</a>
       <a class="button" href="/desk/reports/export/expenses.csv">Export Expenses CSV</a>
+      <a class="button" href="/desk/reports/export/remote-sessions.csv">Export Remote Sessions CSV</a>
     </div>
   </section>
   <section class="card">
@@ -1658,6 +1840,14 @@ app.get("/desk/reports/export/expenses.csv", requireAuth, async (request, respon
   sendCsv(response, "expenses", [
     ["id", "createdAt", "updatedAt", "expenseDate", "description", "vendor", "category", "amount", "paymentMethod", "customerName", "ticketId", "invoiceId", "notes"],
     ...expenses.map((expense) => [expense.id, isoDate(expense.createdAt), isoDate(expense.updatedAt), isoDate(expense.expenseDate), expense.description, expense.vendor, expense.category, moneyCsv(expense.amountCents), expense.paymentMethod, expense.customer?.name, expense.ticketId, expense.invoiceId, expense.notes])
+  ]);
+});
+
+app.get("/desk/reports/export/remote-sessions.csv", requireAuth, async (request, response) => {
+  const sessions = await prisma.remoteSession.findMany({ orderBy: { createdAt: "desc" } });
+  sendCsv(response, "remote-sessions", [
+    ["sessionCode", "clientName", "phone", "email", "company", "deviceType", "issueSummary", "consentAccepted", "consentAcceptedAt", "status", "approvedAt", "startedAt", "endedAt", "remoteTool", "createdAt"],
+    ...sessions.map((session) => [session.sessionCode, session.clientName, session.phone, session.email, session.company, session.deviceType, session.issueSummary, session.consentAccepted, isoDate(session.consentAcceptedAt), session.status, isoDate(session.approvedAt), isoDate(session.startedAt), isoDate(session.endedAt), session.remoteTool, isoDate(session.createdAt)])
   ]);
 });
 

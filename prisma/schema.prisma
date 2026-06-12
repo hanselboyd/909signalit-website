@@ -8,7 +8,7 @@ datasource db {
 }
 
 model Lead {
-  id               Int       @id @default(autoincrement())
+  id               Int             @id @default(autoincrement())
   name             String
   phone            String
   email            String?
@@ -19,40 +19,42 @@ model Lead {
   urgency          String
   preferredContact String
   message          String
-  source           String    @default("Website")
-  status           String    @default("New Lead")
+  source           String          @default("Website")
+  status           String          @default("New Lead")
   notes            String?
   lastContactedAt  DateTime?
   followUpAt       DateTime?
   followUpNote     String?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
   tickets          Ticket[]
   invoices         Invoice[]
+  remoteSessions   RemoteSession[]
 }
 
 model Customer {
-  id           Int       @id @default(autoincrement())
-  name         String
-  phone        String?
-  email        String?
-  businessName String?
-  customerType String?
-  address      String?
-  city         String?
-  notes        String?
-  followUpAt   DateTime?
-  followUpNote String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  tickets      Ticket[]
-  invoices     Invoice[]
-  expenses     Expense[]
+  id             Int             @id @default(autoincrement())
+  name           String
+  phone          String?
+  email          String?
+  businessName   String?
+  customerType   String?
+  address        String?
+  city           String?
+  notes          String?
+  followUpAt     DateTime?
+  followUpNote   String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  tickets        Ticket[]
+  invoices       Invoice[]
+  expenses       Expense[]
+  remoteSessions RemoteSession[]
 }
 
 model Ticket {
-  id                   Int       @id @default(autoincrement())
-  ticketNumber         String    @unique
+  id                   Int             @id @default(autoincrement())
+  ticketNumber         String          @unique
   customerId           Int?
   leadId               Int?
   title                String
@@ -66,21 +68,22 @@ model Ticket {
   finalPrice           Decimal?
   timeSpentMinutes     Int?
   appointmentAt        DateTime?
-  status               String    @default("New")
+  status               String          @default("New")
   internalNotes        String?
   customerNotes        String?
   recommendedNextSteps String?
   completedAt          DateTime?
   followUpAt           DateTime?
   followUpNote         String?
-  reviewRequested      Boolean   @default(false)
-  reviewReceived       Boolean   @default(false)
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
-  customer             Customer? @relation(fields: [customerId], references: [id])
-  lead                 Lead?     @relation(fields: [leadId], references: [id])
+  reviewRequested      Boolean         @default(false)
+  reviewReceived       Boolean         @default(false)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  customer             Customer?       @relation(fields: [customerId], references: [id])
+  lead                 Lead?           @relation(fields: [leadId], references: [id])
   invoices             Invoice[]
   expenses             Expense[]
+  remoteSessions       RemoteSession[]
 }
 
 model Invoice {
@@ -144,4 +147,33 @@ model Expense {
   customer      Customer? @relation(fields: [customerId], references: [id])
   ticket        Ticket?   @relation(fields: [ticketId], references: [id])
   invoice       Invoice?  @relation(fields: [invoiceId], references: [id])
+}
+
+model RemoteSession {
+  id                String    @id @default(cuid())
+  sessionCode       String    @unique
+  clientName        String
+  phone             String
+  email             String?
+  company           String?
+  deviceType        String?
+  issueSummary      String?
+  consentAccepted   Boolean   @default(false)
+  consentAcceptedAt DateTime?
+  status            String    @default("Requested")
+  ticketId          Int?
+  customerId        Int?
+  leadId            Int?
+  technicianName    String?
+  approvedAt        DateTime?
+  startedAt         DateTime?
+  endedAt           DateTime?
+  remoteTool        String?
+  connectionUrl     String?
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  ticket            Ticket?   @relation(fields: [ticketId], references: [id])
+  customer          Customer? @relation(fields: [customerId], references: [id])
+  lead              Lead?     @relation(fields: [leadId], references: [id])
 }

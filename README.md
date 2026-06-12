@@ -148,6 +148,10 @@ Reports and CSV exports allow 909 Signal Desk to download leads, customers, tick
 
 Follow-up reminders help track leads needing contact, unpaid invoices, stale tickets, review follow-ups, and customer follow-ups. They are internal CRM reminders and do not send automatic messages.
 
+### 909 Signal Remote Assist
+
+909 Signal Remote Assist is a consent-first remote support workflow. Clients request a session, accept consent terms, and receive a session code. Actual remote control will be added later through a visible, client-approved tool or app. The system must not provide hidden, unattended, or stealth access.
+
 ## Configured Contact
 
 - `909-260-8660`
