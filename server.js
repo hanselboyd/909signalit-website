@@ -21,7 +21,26 @@ const ticketStatuses = ["New", "Scheduled", "In Progress", "Waiting on Customer"
 const invoiceStatuses = ["Draft", "Sent", "Partially Paid", "Paid", "Overdue", "Void", "Refunded"];
 const customerTypes = ["Residential", "Business", "Warehouse", "Restaurant", "Church", "Nonprofit", "Other"];
 const serviceTypes = ["Computer Repair", "Wi-Fi Troubleshooting", "Printer Setup", "Small Business IT Support", "Network Support", "POS Support", "Microsoft 365 Support", "Email Support", "Data Backup Setup", "Remote IT Support", "Other"];
-const invoiceServiceOptions = ["Remote IT Support", "On-site IT Support", "Computer Repair", "Wi-Fi Troubleshooting", "Printer Setup", "Network Support", "POS Support", "Microsoft 365 Support", "Data Backup Setup", "Technology Checkup", "Same-Day IT Support"];
+const standardServiceMenu = [
+  { name: "Remote IT Support", priceCents: 6500, category: "Remote" },
+  { name: "Computer Repair / Tune-Up", priceCents: 9500, category: "Computer" },
+  { name: "Printer Setup", priceCents: 9500, category: "Printer" },
+  { name: "Wi-Fi Troubleshooting", priceCents: 9500, category: "Network" },
+  { name: "Malware Cleanup", priceCents: 12500, category: "Computer" },
+  { name: "Microsoft 365 Support", priceCents: 12500, category: "Business" },
+  { name: "New Computer Setup", priceCents: 12500, category: "Computer" },
+  { name: "Network Support", priceCents: 15000, category: "Network" },
+  { name: "Warehouse Wi-Fi / Network Support", priceCents: 15000, category: "Network" },
+  { name: "Workstation Setup", priceCents: 17500, category: "Business" },
+  { name: "Same-Day IT Support", priceCents: 17500, category: "Priority" },
+  { name: "Technology Checkup", priceCents: 14900, category: "Assessment" },
+  { name: "POS Support", priceCents: 12500, category: "Business" },
+  { name: "Data Backup Setup", priceCents: 12500, category: "Backup" },
+  { name: "Email Setup & Troubleshooting", priceCents: 9500, category: "Email" },
+  { name: "Router Setup & Troubleshooting", priceCents: 9500, category: "Network" }
+];
+const invoiceServiceOptions = standardServiceMenu.map((service) => service.name);
+const quickServiceNames = ["Remote IT Support", "Computer Repair / Tune-Up", "Wi-Fi Troubleshooting", "Printer Setup", "Network Support", "POS Support"];
 const urgencyOptions = ["Normal", "Same-day if available", "Emergency"];
 const contactOptions = ["Call", "Text", "Email"];
 const sourceOptions = ["Website", "Google Business Profile", "Phone", "Text", "Referral", "Facebook", "Nextdoor", "Walk-in", "Other"];
@@ -174,6 +193,8 @@ function layout(title, body) {
     button, .button { display:inline-flex; align-items:center; justify-content:center; width:max-content; min-height:40px; padding:9px 14px; color:white; background:var(--blue); border:0; border-radius:8px; font-weight:900; text-decoration:none; cursor:pointer; }
     .muted { color:#5d6b7f; }
     .row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+    .service-chip { min-height:34px; padding:7px 10px; color:var(--navy); background:#eef8ee; border:1px solid rgba(53,181,31,.28); }
+    .quick-add-panel { border-top:4px solid var(--green); }
     .danger { color:#b42318; }
     @media (max-width: 850px) { .grid, .grid.two { grid-template-columns:1fr; } table { display:block; overflow-x:auto; } header { align-items:flex-start; flex-direction:column; } }
   </style>
@@ -187,6 +208,7 @@ function layout(title, body) {
       <a href="/desk/customers">Customers</a>
       <a href="/desk/tickets">Tickets</a>
       <a href="/desk/invoices">Invoices</a>
+      <a href="/desk/service-menu">Service Menu</a>
       <a href="/desk/logout">Logout</a>
     </nav>
   </header>
@@ -201,6 +223,31 @@ function statusOptions(statuses, selected) {
 
 function serviceDatalist() {
   return `<datalist id="invoice-service-options">${invoiceServiceOptions.map((service) => `<option value="${esc(service)}"></option>`).join("")}</datalist>`;
+}
+
+function centsToInputValue(cents) {
+  return ((Number(cents) || 0) / 100).toFixed(2);
+}
+
+function serviceMenuOptions() {
+  return standardServiceMenu.map((service, index) => `<option value="${index}">${esc(service.name)} &mdash; ${dollars(service.priceCents)}</option>`).join("");
+}
+
+function quickServiceChips() {
+  return quickServiceNames.map((name) => {
+    const service = standardServiceMenu.find((item) => item.name === name);
+    if (!service) return "";
+    return `<button class="button service-chip" type="button" data-service-name="${esc(service.name)}" data-service-price="${centsToInputValue(service.priceCents)}">${esc(service.name)}</button>`;
+  }).join("");
+}
+
+function serviceMenuTable() {
+  return `<table><thead><tr><th>Service</th><th>Category</th><th>Price</th></tr></thead><tbody>${standardServiceMenu.map((service) => `
+    <tr>
+      <td>${esc(service.name)}</td>
+      <td>${esc(service.category || "")}</td>
+      <td>${dollars(service.priceCents)}</td>
+    </tr>`).join("")}</tbody></table>`;
 }
 
 function deskSetupMessage(response) {
@@ -280,7 +327,7 @@ function invoiceTable(invoices) {
 function invoiceForm(action, values = {}, message = "") {
   const itemCount = Math.max(3, values.descriptions?.length || 0);
   const rows = Array.from({ length: itemCount }, (_, index) => `
-    <div class="grid">
+    <div class="grid line-item-row">
       <label>Description <input name="description" list="invoice-service-options" value="${esc(values.descriptions?.[index] || "")}" ${index === 0 ? "required" : ""}></label>
       <label>Quantity <input name="quantity" type="number" min="1" step="1" value="${esc(values.quantities?.[index] || "1")}"></label>
       <label>Unit price <input name="unitPrice" inputmode="decimal" placeholder="0.00" value="${esc(values.unitPrices?.[index] || "")}" ${index === 0 ? "required" : ""}></label>
@@ -298,15 +345,53 @@ function invoiceForm(action, values = {}, message = "") {
       <label>Due date <input name="dueDate" type="date" value="${fieldValue(values, "dueDate")}"></label>
     </section>
     <h2>Line Items</h2>
+    <section class="card quick-add-panel">
+      <h2>Quick Add Service</h2>
+      <div class="row">
+        <label>Standard service <select id="quick-service-select"><option value="">Select a service</option>${serviceMenuOptions()}</select></label>
+        <button type="button" id="add-standard-service">Add Selected Service</button>
+      </div>
+      <div class="row" aria-label="Suggested services">${quickServiceChips()}</div>
+    </section>
     ${serviceDatalist()}
-    ${rows}
+    <div id="line-items">${rows}</div>
     <section class="grid two">
       <label>Discount <input name="discount" inputmode="decimal" placeholder="0.00" value="${fieldValue(values, "discount")}"></label>
       <label>Tax <input name="tax" inputmode="decimal" placeholder="0.00" value="${fieldValue(values, "tax")}"></label>
     </section>
     <label>Notes <textarea name="notes">${fieldValue(values, "notes")}</textarea></label>
     <button type="submit">Save Draft</button>
-  </form>`;
+  </form>
+  <script>
+    (() => {
+      const services = ${JSON.stringify(standardServiceMenu.map((service) => ({ name: service.name, price: centsToInputValue(service.priceCents) })))};
+      const lineItems = document.querySelector("#line-items");
+
+      function addService(name, price) {
+        if (!lineItems || !name || !price) return;
+        const rows = Array.from(lineItems.querySelectorAll(".line-item-row"));
+        const emptyRow = rows.find((row) => !row.querySelector('[name="description"]')?.value.trim());
+        const row = emptyRow || rows[rows.length - 1]?.cloneNode(true);
+        if (!row) return;
+        row.querySelector('[name="description"]').value = name;
+        row.querySelector('[name="quantity"]').value = "1";
+        row.querySelector('[name="unitPrice"]').value = price;
+        row.querySelectorAll("input").forEach((input) => { input.required = false; });
+        if (!emptyRow) lineItems.appendChild(row);
+      }
+
+      document.querySelector("#add-standard-service")?.addEventListener("click", () => {
+        const select = document.querySelector("#quick-service-select");
+        if (!select?.value) return;
+        const service = services[Number(select.value)];
+        if (service) addService(service.name, service.price);
+      });
+
+      document.querySelectorAll("[data-service-name]").forEach((button) => {
+        button.addEventListener("click", () => addService(button.dataset.serviceName, button.dataset.servicePrice));
+      });
+    })();
+  </script>`;
 }
 
 async function nextInvoiceNumber() {
@@ -739,6 +824,10 @@ app.get("/desk/invoices", requireAuth, async (request, response) => {
   const where = { AND: [status ? { status } : {}, searchWhere(q, ["invoiceNumber", "customerName", "customerEmail", "customerPhone"]) || {}] };
   const invoices = await prisma.invoice.findMany({ where, orderBy: { createdAt: "desc" } });
   response.send(layout("Invoices", `<section class="card"><div class="row"><h1>Invoices</h1><a class="button" href="/desk/invoices/new">New Invoice</a></div><form method="get" class="row"><input name="q" value="${esc(q)}" placeholder="Search invoice, name, email, phone"><select name="status"><option value="">All statuses</option>${statusOptions(invoiceStatuses, status)}</select><button>Filter</button></form></section>${invoiceTable(invoices)}`));
+});
+
+app.get("/desk/service-menu", requireAuth, (request, response) => {
+  response.send(layout("Service Menu", `<section class="card"><div class="row"><h1>Service Menu</h1><a class="button" href="/desk/invoices/new">New Invoice</a></div><p class="muted">Read-only standard services used for quick invoice line items. Edit the service menu in code for now.</p></section>${serviceMenuTable()}`));
 });
 
 app.get("/desk/invoices/new", requireAuth, (request, response) => {

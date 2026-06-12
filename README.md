@@ -129,7 +129,12 @@ npx prisma generate
 - `/desk/customers`
 - `/desk/tickets`
 - `/desk/invoices`
+- `/desk/service-menu`
 - `/api/leads`
+
+### Standard Service Menu
+
+The standard service menu is used for quick invoice line items and can be edited in code for now.
 
 ## Configured Contact
 
