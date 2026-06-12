@@ -41,6 +41,8 @@ const standardServiceMenu = [
 ];
 const invoiceServiceOptions = standardServiceMenu.map((service) => service.name);
 const quickServiceNames = ["Remote IT Support", "Computer Repair / Tune-Up", "Wi-Fi Troubleshooting", "Printer Setup", "Network Support", "POS Support"];
+const expenseCategories = ["Parts / Hardware", "Software / Subscriptions", "Fuel / Travel", "Tools / Equipment", "Phone / Internet", "Marketing / Ads", "Office Supplies", "Contract Labor", "Fees / Processing", "Meals", "Other"];
+const expensePaymentMethods = ["Cash", "Debit Card", "Credit Card", "Bank Transfer", "Stripe/Processing Fee", "Other"];
 const urgencyOptions = ["Normal", "Same-day if available", "Emergency"];
 const contactOptions = ["Call", "Text", "Email"];
 const sourceOptions = ["Website", "Google Business Profile", "Phone", "Text", "Referral", "Facebook", "Nextdoor", "Walk-in", "Other"];
@@ -197,6 +199,13 @@ function lastSevenDaysStart() {
   return start;
 }
 
+function lastThirtyDaysStart() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  start.setDate(start.getDate() - 29);
+  return start;
+}
+
 function currentMonthRange() {
   const start = nowMonthStart();
   const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
@@ -266,6 +275,7 @@ function layout(title, body) {
       <a href="/desk/customers">Customers</a>
       <a href="/desk/tickets">Tickets</a>
       <a href="/desk/invoices">Invoices</a>
+      <a href="/desk/expenses">Expenses</a>
       <a href="/desk/service-menu">Service Menu</a>
       <a href="/desk/logout">Logout</a>
     </nav>
@@ -489,6 +499,70 @@ function recentActivityTable(items) {
     </tr>`).join("") || `<tr><td colspan="5">No recent activity yet.</td></tr>`}</tbody></table>`;
 }
 
+function expenseLinkSummary(expense) {
+  const links = [];
+  if (expense.customer) links.push(`<a href="/desk/customers/${expense.customer.id}">${esc(expense.customer.name)}</a>`);
+  if (expense.ticket) links.push(`<a href="/desk/tickets/${expense.ticket.id}">${esc(expense.ticket.ticketNumber)}</a>`);
+  if (expense.invoice) links.push(`<a href="/desk/invoices/${expense.invoice.id}">${esc(expense.invoice.invoiceNumber)}</a>`);
+  return links.join("<br>") || "";
+}
+
+function expenseTable(expenses, emptyMessage = "No expenses yet.") {
+  return `<table><thead><tr><th>Date</th><th>Description</th><th>Vendor</th><th>Category</th><th>Amount</th><th>Linked</th><th>Created</th><th></th></tr></thead><tbody>${expenses.map((expense) => `
+    <tr>
+      <td>${displayDate(expense.expenseDate)}</td>
+      <td><a href="/desk/expenses/${expense.id}">${esc(expense.description)}</a></td>
+      <td>${esc(expense.vendor || "")}</td>
+      <td>${esc(expense.category)}</td>
+      <td>${dollars(expense.amountCents)}</td>
+      <td>${expenseLinkSummary(expense)}</td>
+      <td>${displayDate(expense.createdAt)}</td>
+      <td><a href="/desk/expenses/${expense.id}">View</a></td>
+    </tr>`).join("") || `<tr><td colspan="8">${esc(emptyMessage)}</td></tr>`}</tbody></table>`;
+}
+
+function compactExpenseTable(expenses, emptyMessage) {
+  return `<table><thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Amount</th><th></th></tr></thead><tbody>${expenses.map((expense) => `
+    <tr>
+      <td>${displayDate(expense.expenseDate)}</td>
+      <td>${esc(expense.description)}</td>
+      <td>${esc(expense.category)}</td>
+      <td>${dollars(expense.amountCents)}</td>
+      <td><a href="/desk/expenses/${expense.id}">View</a></td>
+    </tr>`).join("") || `<tr><td colspan="5">${esc(emptyMessage)}</td></tr>`}</tbody></table>`;
+}
+
+function relatedSelectOptions(items, selected, labelFor) {
+  return items.map((item) => `<option value="${item.id}"${String(item.id) === String(selected || "") ? " selected" : ""}>${esc(labelFor(item))}</option>`).join("");
+}
+
+function expenseForm(action, values = {}, lists = {}, message = "") {
+  return `<form method="post" action="${esc(action)}">
+    <h1>${values.id ? "Edit Expense" : "New Expense"}</h1>
+    ${message}
+    <label>Description <input name="description" value="${fieldValue(values, "description")}" required></label>
+    <label>Vendor <input name="vendor" value="${fieldValue(values, "vendor")}"></label>
+    <label>Category <select name="category" required><option value="">Select one</option>${statusOptions(expenseCategories, values.category)}</select></label>
+    <label>Amount <input name="amount" value="${fieldValue(values, "amount")}" inputmode="decimal" required></label>
+    <label>Expense date <input name="expenseDate" type="date" value="${fieldValue(values, "expenseDate", dateOnlyValue(new Date()))}" required></label>
+    <label>Payment method <select name="paymentMethod"><option value="">Select one</option>${statusOptions(expensePaymentMethods, values.paymentMethod)}</select></label>
+    <label>Customer <select name="customerId"><option value="">None</option>${relatedSelectOptions(lists.customers || [], values.customerId, (customer) => `${customer.name}${customer.businessName ? ` - ${customer.businessName}` : ""}`)}</select></label>
+    <label>Ticket <select name="ticketId"><option value="">None</option>${relatedSelectOptions(lists.tickets || [], values.ticketId, (ticket) => `${ticket.ticketNumber} - ${ticket.title}`)}</select></label>
+    <label>Invoice <select name="invoiceId"><option value="">None</option>${relatedSelectOptions(lists.invoices || [], values.invoiceId, (invoice) => `${invoice.invoiceNumber} - ${invoice.customerName}`)}</select></label>
+    <label>Notes <textarea name="notes">${fieldValue(values, "notes")}</textarea></label>
+    <button>Save Expense</button>
+  </form>`;
+}
+
+async function expenseFormLists() {
+  const [customers, tickets, invoices] = await Promise.all([
+    prisma.customer.findMany({ orderBy: { updatedAt: "desc" }, take: 200 }),
+    prisma.ticket.findMany({ orderBy: { updatedAt: "desc" }, take: 200 }),
+    prisma.invoice.findMany({ orderBy: { updatedAt: "desc" }, take: 200 })
+  ]);
+  return { customers, tickets, invoices };
+}
+
 function dashboardActivityItems(leads, tickets, invoices) {
   const items = [
     ...leads.map((lead) => ({
@@ -638,6 +712,7 @@ function ticketWorkOrderPage(ticket) {
   const linkedInvoices = ticket.invoices?.length
     ? ticket.invoices.map((invoice) => `<a href="/desk/invoices/${invoice.id}">${esc(invoice.invoiceNumber)}</a> (${esc(invoice.status)}, ${dollars(invoice.totalCents)})`).join("<br>")
     : `<span class="muted">No invoices linked yet.</span>`;
+  const ticketExpenses = ticket.expenses || [];
   const requestReview = ["Completed", "Closed"].includes(ticket.status)
     ? ticketReviewRequestSection(ticket)
     : `<section class="card"><h2>Review Follow-Up</h2><p class="muted">Mark the work order completed before requesting a review.</p></section>`;
@@ -648,6 +723,7 @@ function ticketWorkOrderPage(ticket) {
         <form method="post" action="/desk/tickets/${ticket.id}/status"><input type="hidden" name="status" value="In Progress"><button>Mark In Progress</button></form>
         <form method="post" action="/desk/tickets/${ticket.id}/complete"><button>Mark Completed</button></form>
         <a class="button" href="/desk/invoices/new?ticketId=${ticket.id}">Create Invoice</a>
+        <a class="button" href="/desk/expenses/new?ticketId=${ticket.id}">Add Expense for Ticket</a>
         <a class="button" href="/desk/tickets">Back to Tickets</a>
       </div>
       <div class="grid two">
@@ -713,6 +789,7 @@ function ticketWorkOrderPage(ticket) {
       </section>
       <button>Save Work Order</button>
     </form>
+    <section class="card"><h2>Related Expenses</h2>${compactExpenseTable(ticketExpenses, "No expenses connected to this ticket yet.")}</section>
     ${completionSummaryPanel(ticket)}
     ${requestReview}`;
 }
@@ -1103,6 +1180,7 @@ app.get("/desk/logout", (request, response) => {
 app.get("/desk", requireAuth, async (request, response) => {
   const today = todayRange();
   const weekStart = lastSevenDaysStart();
+  const thirtyDaysStart = lastThirtyDaysStart();
   const month = currentMonthRange();
   const completedStatus = { status: { in: ["Completed", "Closed"] } };
   const needsReviewWhere = { ...completedStatus, reviewRequested: false, reviewReceived: false };
@@ -1125,6 +1203,8 @@ app.get("/desk", requireAuth, async (request, response) => {
     sentUnpaidInvoices,
     paidInvoicesThisMonth,
     paidRevenueThisMonth,
+    expensesThisMonth,
+    expensesLast30Days,
     openBalance,
     averageInvoiceTotal,
     reviewRequestsSent,
@@ -1147,6 +1227,8 @@ app.get("/desk", requireAuth, async (request, response) => {
     prisma.invoice.count({ where: { status: { in: sentUnpaidStatuses } } }),
     prisma.invoice.count({ where: { status: "Paid", paidAt: { gte: month.start, lt: month.end } } }),
     prisma.invoice.aggregate({ where: { status: "Paid", paidAt: { gte: month.start, lt: month.end } }, _sum: { totalCents: true } }),
+    prisma.expense.aggregate({ where: { expenseDate: { gte: month.start, lt: month.end } }, _sum: { amountCents: true } }),
+    prisma.expense.aggregate({ where: { expenseDate: { gte: thirtyDaysStart } }, _sum: { amountCents: true } }),
     prisma.invoice.aggregate({ where: { status: { in: openInvoiceStatuses } }, _sum: { totalCents: true } }),
     prisma.invoice.aggregate({ where: nonVoidInvoiceWhere, _avg: { totalCents: true } }),
     prisma.ticket.count({ where: { reviewRequested: true, reviewReceived: false } }),
@@ -1157,12 +1239,15 @@ app.get("/desk", requireAuth, async (request, response) => {
   ]);
 
   const paidRevenueCents = paidRevenueThisMonth._sum.totalCents || 0;
+  const expensesThisMonthCents = expensesThisMonth._sum.amountCents || 0;
+  const expensesLast30DaysCents = expensesLast30Days._sum.amountCents || 0;
+  const estimatedProfitCents = paidRevenueCents - expensesThisMonthCents;
   const openBalanceCents = openBalance._sum.totalCents || 0;
   const averageInvoiceCents = Math.round(averageInvoiceTotal._avg.totalCents || 0);
   const activityItems = dashboardActivityItems(recentLeads, recentTickets, recentInvoices);
 
   response.send(layout("Dashboard", `<section class="card">
-    <div class="row"><h1>Dashboard</h1><a class="button" href="/desk/leads/new">Add Lead</a><a class="button" href="/desk/tickets">Tickets</a><a class="button" href="/desk/invoices">Invoices</a></div>
+    <div class="row"><h1>Dashboard</h1><a class="button" href="/desk/leads/new">Add Lead</a><a class="button" href="/desk/tickets">Tickets</a><a class="button" href="/desk/invoices">Invoices</a><a class="button" href="/desk/expenses">Expenses</a></div>
     <p class="muted">Daily command center. Week metrics use the last 7 days. Month metrics use the current server month.</p>
   </section>
   <section class="card"><h2>Leads</h2><div class="grid">
@@ -1184,6 +1269,9 @@ app.get("/desk", requireAuth, async (request, response) => {
     ${metricCard("Sent/unpaid invoices", sentUnpaidInvoices)}
     ${metricCard("Paid invoices this month", paidInvoicesThisMonth)}
     ${metricCard("Paid revenue this month", dollars(paidRevenueCents))}
+    ${metricCard("Expenses this month", dollars(expensesThisMonthCents))}
+    ${metricCard("Expenses last 30 days", dollars(expensesLast30DaysCents))}
+    ${metricCard("Estimated profit this month", dollars(estimatedProfitCents))}
     ${metricCard("Open balance", dollars(openBalanceCents))}
     ${metricCard("Average invoice total", dollars(averageInvoiceCents))}
   </div></section>
@@ -1199,6 +1287,141 @@ app.get("/desk", requireAuth, async (request, response) => {
     ${attentionCard("Sent/unpaid invoices", sentUnpaidInvoices, "/desk/invoices")}
   </div></section>
   <section class="card"><h2>Recent Activity</h2>${activityItems.length ? recentActivityTable(activityItems) : `<p class="muted">No recent activity yet.</p>`}</section>`));
+});
+
+app.get("/desk/expenses", requireAuth, async (request, response) => {
+  const category = String(request.query.category || "");
+  const range = String(request.query.range || "month");
+  const now = new Date();
+  const month = currentMonthRange();
+  const thirtyDaysStart = lastThirtyDaysStart();
+  const where = {
+    AND: [
+      category ? { category } : {},
+      range === "month" ? { expenseDate: { gte: month.start, lt: month.end } } : {},
+      range === "30" ? { expenseDate: { gte: thirtyDaysStart, lte: now } } : {}
+    ]
+  };
+  const expenses = await prisma.expense.findMany({
+    where,
+    include: { customer: true, ticket: true, invoice: true },
+    orderBy: { expenseDate: "desc" }
+  });
+  const totalCents = expenses.reduce((total, expense) => total + expense.amountCents, 0);
+  response.send(layout("Expenses", `<section class="card">
+    <div class="row"><h1>Expenses</h1><a class="button" href="/desk/expenses/new">Add Expense</a></div>
+    <form method="get" class="row">
+      <label>Category <select name="category"><option value="">All categories</option>${statusOptions(expenseCategories, category)}</select></label>
+      <label>Range <select name="range"><option value="month"${range === "month" ? " selected" : ""}>Current month</option><option value="30"${range === "30" ? " selected" : ""}>Last 30 days</option><option value="all"${range === "all" ? " selected" : ""}>All</option></select></label>
+      <button>Filter</button>
+    </form>
+    <p>Total: <strong>${dollars(totalCents)}</strong></p>
+  </section>${expenseTable(expenses)}`));
+});
+
+app.get("/desk/expenses/new", requireAuth, async (request, response) => {
+  const lists = await expenseFormLists();
+  const customerId = Number(request.query.customerId);
+  const ticketId = Number(request.query.ticketId);
+  const invoiceId = Number(request.query.invoiceId);
+  const [ticket, invoice] = await Promise.all([
+    Number.isInteger(ticketId) && ticketId > 0 ? prisma.ticket.findUnique({ where: { id: ticketId } }) : null,
+    Number.isInteger(invoiceId) && invoiceId > 0 ? prisma.invoice.findUnique({ where: { id: invoiceId } }) : null
+  ]);
+  const values = {
+    category: "Parts / Hardware",
+    expenseDate: dateOnlyValue(new Date()),
+    customerId: ticket?.customerId || invoice?.customerId || (Number.isInteger(customerId) && customerId > 0 ? customerId : ""),
+    ticketId: ticket?.id || invoice?.ticketId || "",
+    invoiceId: invoice?.id || ""
+  };
+  response.send(layout("New Expense", expenseForm("/desk/expenses/new", values, lists)));
+});
+
+app.post("/desk/expenses/new", requireAuth, async (request, response) => {
+  const lists = await expenseFormLists();
+  const amountCents = parseMoneyToCents(request.body.amount);
+  const expenseDate = request.body.expenseDate ? new Date(`${request.body.expenseDate}T12:00:00`) : null;
+  const values = { ...request.body };
+  if (!String(request.body.description || "").trim() || !expenseCategories.includes(request.body.category) || !expenseDate || amountCents == null || amountCents <= 0) {
+    response.status(400).send(layout("New Expense", expenseForm("/desk/expenses/new", values, lists, `<p class="danger">Description, category, positive amount, and expense date are required.</p>`)));
+    return;
+  }
+  const customerId = Number(request.body.customerId);
+  const ticketId = Number(request.body.ticketId);
+  const invoiceId = Number(request.body.invoiceId);
+  const expense = await prisma.expense.create({
+    data: {
+      description: request.body.description.trim(),
+      vendor: request.body.vendor?.trim() || null,
+      category: request.body.category,
+      amountCents,
+      expenseDate,
+      paymentMethod: expensePaymentMethods.includes(request.body.paymentMethod) ? request.body.paymentMethod : null,
+      notes: request.body.notes?.trim() || null,
+      customerId: Number.isInteger(customerId) && customerId > 0 ? customerId : null,
+      ticketId: Number.isInteger(ticketId) && ticketId > 0 ? ticketId : null,
+      invoiceId: Number.isInteger(invoiceId) && invoiceId > 0 ? invoiceId : null
+    }
+  });
+  response.redirect(`/desk/expenses/${expense.id}`);
+});
+
+app.get("/desk/expenses/:id", requireAuth, async (request, response) => {
+  const expense = await prisma.expense.findUnique({
+    where: { id: request.params.id },
+    include: { customer: true, ticket: true, invoice: true }
+  });
+  if (!expense) return response.status(404).send(layout("Expense not found", "<section class='card'>Expense not found.</section>"));
+  const lists = await expenseFormLists();
+  const values = {
+    id: expense.id,
+    description: expense.description,
+    vendor: expense.vendor || "",
+    category: expense.category,
+    amount: centsToInputValue(expense.amountCents),
+    expenseDate: dateOnlyValue(expense.expenseDate),
+    paymentMethod: expense.paymentMethod || "",
+    notes: expense.notes || "",
+    customerId: expense.customerId || "",
+    ticketId: expense.ticketId || "",
+    invoiceId: expense.invoiceId || ""
+  };
+  response.send(layout("Expense", `<section class="card">
+    <div class="row"><h1>${esc(expense.description)}</h1><a class="button" href="/desk/expenses">Back to Expenses</a></div>
+    <p><strong>Amount:</strong> ${dollars(expense.amountCents)}<br><strong>Date:</strong> ${displayDate(expense.expenseDate)}<br><strong>Vendor:</strong> ${esc(expense.vendor || "")}<br><strong>Category:</strong> ${esc(expense.category)}</p>
+    <p><strong>Linked records:</strong><br>${expenseLinkSummary(expense) || `<span class="muted">No linked customer, ticket, or invoice.</span>`}</p>
+    ${expense.notes ? `<p><strong>Notes:</strong><br>${esc(expense.notes)}</p>` : ""}
+  </section>${expenseForm(`/desk/expenses/${expense.id}/update`, values, lists)}`));
+});
+
+app.post("/desk/expenses/:id/update", requireAuth, async (request, response) => {
+  const lists = await expenseFormLists();
+  const amountCents = parseMoneyToCents(request.body.amount);
+  const expenseDate = request.body.expenseDate ? new Date(`${request.body.expenseDate}T12:00:00`) : null;
+  if (!String(request.body.description || "").trim() || !expenseCategories.includes(request.body.category) || !expenseDate || amountCents == null || amountCents <= 0) {
+    response.status(400).send(layout("Edit Expense", expenseForm(`/desk/expenses/${request.params.id}/update`, { ...request.body, id: request.params.id }, lists, `<p class="danger">Description, category, positive amount, and expense date are required.</p>`)));
+    return;
+  }
+  const customerId = Number(request.body.customerId);
+  const ticketId = Number(request.body.ticketId);
+  const invoiceId = Number(request.body.invoiceId);
+  await prisma.expense.update({
+    where: { id: request.params.id },
+    data: {
+      description: request.body.description.trim(),
+      vendor: request.body.vendor?.trim() || null,
+      category: request.body.category,
+      amountCents,
+      expenseDate,
+      paymentMethod: expensePaymentMethods.includes(request.body.paymentMethod) ? request.body.paymentMethod : null,
+      notes: request.body.notes?.trim() || null,
+      customerId: Number.isInteger(customerId) && customerId > 0 ? customerId : null,
+      ticketId: Number.isInteger(ticketId) && ticketId > 0 ? ticketId : null,
+      invoiceId: Number.isInteger(invoiceId) && invoiceId > 0 ? invoiceId : null
+    }
+  });
+  response.redirect(`/desk/expenses/${request.params.id}`);
 });
 
 app.get("/desk/leads", requireAuth, async (request, response) => {
@@ -1291,7 +1514,8 @@ app.get("/desk/customers/:id", requireAuth, async (request, response) => {
     where: { id: Number(request.params.id) },
     include: {
       tickets: { include: { lead: true }, orderBy: { updatedAt: "desc" } },
-      invoices: { include: { lead: true }, orderBy: { createdAt: "desc" } }
+      invoices: { include: { lead: true }, orderBy: { createdAt: "desc" } },
+      expenses: { orderBy: { expenseDate: "desc" } }
     }
   });
   if (!customer) return response.status(404).send(layout("Customer not found", "<section class='card'>Customer not found.</section>"));
@@ -1299,7 +1523,7 @@ app.get("/desk/customers/:id", requireAuth, async (request, response) => {
   const relatedLeads = Array.from(new Map([...customer.tickets.map((ticket) => ticket.lead).filter(Boolean), ...customer.invoices.map((invoice) => invoice.lead).filter(Boolean)].map((lead) => [lead.id, lead])).values())
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   response.send(layout(customer.name, `<section class="card">
-      <div class="row"><h1>${esc(customer.name)}</h1><a class="button" href="/desk/tickets/new?customerId=${customer.id}">New Ticket for Customer</a><a class="button" href="/desk/invoices/new?customerId=${customer.id}">New Invoice for Customer</a><a class="button" href="/desk/customers">Back to Customers</a></div>
+      <div class="row"><h1>${esc(customer.name)}</h1><a class="button" href="/desk/tickets/new?customerId=${customer.id}">New Ticket for Customer</a><a class="button" href="/desk/invoices/new?customerId=${customer.id}">New Invoice for Customer</a><a class="button" href="/desk/expenses/new?customerId=${customer.id}">Add Expense</a><a class="button" href="/desk/customers">Back to Customers</a></div>
       <p><strong>Business:</strong> ${esc(customer.businessName || "")}</p>
       <p><strong>Type:</strong> ${esc(customer.customerType || "")}</p>
       <p><strong>Phone:</strong> ${esc(customer.phone || "")}<br><strong>Email:</strong> ${esc(customer.email || "")}</p>
@@ -1318,6 +1542,7 @@ app.get("/desk/customers/:id", requireAuth, async (request, response) => {
     <form method="post" action="/desk/customers/${customer.id}/update"><h2>Notes</h2><label>Notes <textarea name="notes">${esc(customer.notes || "")}</textarea></label><button>Save Notes</button></form>
     <section class="card"><h2>Related Tickets</h2>${customerTicketHistoryTable(customer.tickets)}</section>
     <section class="card"><h2>Related Invoices</h2>${customerInvoiceHistoryTable(customer.invoices)}</section>
+    <section class="card"><h2>Related Expenses</h2>${compactExpenseTable(customer.expenses, "No expenses for this customer yet.")}</section>
     <section class="card"><h2>Related Leads</h2>${relatedLeadHistoryTable(relatedLeads)}</section>
     <section class="card"><h2>Recent Activity</h2>${customerRecentActivity(customer.tickets, customer.invoices)}</section>`));
 });
@@ -1473,7 +1698,7 @@ app.post("/desk/invoices", requireAuth, async (request, response) => {
 app.get("/desk/invoices/:id", requireAuth, async (request, response) => {
   const invoice = await prisma.invoice.findUnique({
     where: { id: Number(request.params.id) },
-    include: { lineItems: true, customer: true, lead: true, ticket: true }
+    include: { lineItems: true, customer: true, lead: true, ticket: true, expenses: { orderBy: { expenseDate: "desc" } } }
   });
   if (!invoice) return response.status(404).send(layout("Invoice not found", "<section class='card'>Invoice not found.</section>"));
 
@@ -1494,7 +1719,7 @@ app.get("/desk/invoices/:id", requireAuth, async (request, response) => {
   const lineRows = invoice.lineItems.map((item) => `<tr><td>${esc(item.description)}</td><td>${item.quantity}</td><td>${dollars(item.unitPriceCents)}</td><td>${dollars(item.lineTotalCents)}</td></tr>`).join("");
   response.send(layout(invoice.invoiceNumber, `${notice}${stripeMessage}
     <section class="card">
-      <div class="row"><h1>${esc(invoice.invoiceNumber)}</h1><a class="button" href="/desk/invoices">Invoices</a></div>
+      <div class="row"><h1>${esc(invoice.invoiceNumber)}</h1><a class="button" href="/desk/expenses/new?invoiceId=${invoice.id}">Add Expense for Invoice</a><a class="button" href="/desk/invoices">Invoices</a></div>
       <p><strong>${esc(invoice.customerName)}</strong><br>${esc(invoice.customerEmail || "")}<br>${esc(invoice.customerPhone || "")}</p>
       <p>Status: <strong>${esc(invoice.status)}</strong>${invoice.dueDate ? ` Â· Due ${new Date(invoice.dueDate).toLocaleDateString()}` : ""}</p>
       ${invoice.paymentLink ? `<p>Payment link: <a href="${esc(invoice.paymentLink)}" target="_blank" rel="noopener">${esc(invoice.paymentLink)}</a></p>` : `<p class="muted">No payment link generated yet.</p>`}
@@ -1525,7 +1750,8 @@ app.get("/desk/invoices/:id", requireAuth, async (request, response) => {
       <p>Tax: <strong>${dollars(invoice.taxCents)}</strong></p>
       <p>Total: <strong>${dollars(invoice.totalCents)}</strong></p>
       ${invoice.notes ? `<h2>Notes</h2><p>${esc(invoice.notes)}</p>` : ""}
-    </section>`));
+    </section>
+    <section class="card"><h2>Related Expenses</h2>${compactExpenseTable(invoice.expenses, "No expenses connected to this invoice yet.")}</section>`));
 });
 
 app.post("/desk/invoices/:id/status", requireAuth, async (request, response) => {
@@ -1606,7 +1832,7 @@ app.post("/desk/tickets/:id/create-invoice", requireAuth, async (request, respon
 });
 
 app.get("/desk/tickets/:id", requireAuth, async (request, response) => {
-  const ticket = await prisma.ticket.findUnique({ where: { id: Number(request.params.id) }, include: { customer: true, lead: true, invoices: true } });
+  const ticket = await prisma.ticket.findUnique({ where: { id: Number(request.params.id) }, include: { customer: true, lead: true, invoices: true, expenses: { orderBy: { expenseDate: "desc" } } } });
   if (!ticket) return response.status(404).send(layout("Ticket not found", "<section class='card'>Ticket not found.</section>"));
   response.send(layout(ticket.ticketNumber, ticketWorkOrderPage(ticket)));
 });

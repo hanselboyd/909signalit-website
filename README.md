@@ -136,6 +136,10 @@ npx prisma generate
 
 The standard service menu is used for quick invoice line items and can be edited in code for now.
 
+### Expense Tracking
+
+Expense tracking allows 909 Signal Desk to track parts, tools, subscriptions, travel, marketing, and other business costs. Dashboard profit is estimated as paid revenue minus recorded expenses.
+
 ## Configured Contact
 
 - `909-260-8660`

@@ -42,6 +42,7 @@ model Customer {
   updatedAt    DateTime  @updatedAt
   tickets      Ticket[]
   invoices     Invoice[]
+  expenses     Expense[]
 }
 
 model Ticket {
@@ -72,6 +73,7 @@ model Ticket {
   customer             Customer? @relation(fields: [customerId], references: [id])
   lead                 Lead?     @relation(fields: [leadId], references: [id])
   invoices             Invoice[]
+  expenses             Expense[]
 }
 
 model Invoice {
@@ -101,6 +103,7 @@ model Invoice {
   lead                    Lead?             @relation(fields: [leadId], references: [id])
   ticket                  Ticket?           @relation(fields: [ticketId], references: [id])
   lineItems               InvoiceLineItem[]
+  expenses                Expense[]
 }
 
 model InvoiceLineItem {
@@ -113,4 +116,23 @@ model InvoiceLineItem {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   invoice        Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+model Expense {
+  id            String    @id @default(cuid())
+  description   String
+  vendor        String?
+  category      String
+  amountCents   Int
+  expenseDate   DateTime
+  paymentMethod String?
+  notes         String?
+  customerId    Int?
+  ticketId      Int?
+  invoiceId     Int?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  customer      Customer? @relation(fields: [customerId], references: [id])
+  ticket        Ticket?   @relation(fields: [ticketId], references: [id])
+  invoice       Invoice?  @relation(fields: [invoiceId], references: [id])
 }
