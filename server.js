@@ -209,7 +209,24 @@ function lastThirtyDaysStart() {
 function currentMonthRange() {
   const start = nowMonthStart();
   const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
-  return { start, end };
+  return { start, end, value: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}` };
+}
+
+function monthRangeFromParam(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})$/);
+  const now = new Date();
+  const year = match ? Number(match[1]) : now.getFullYear();
+  const monthIndex = match ? Number(match[2]) - 1 : now.getMonth();
+  if (monthIndex < 0 || monthIndex > 11) return currentMonthRange();
+  const start = new Date(year, monthIndex, 1);
+  if (Number.isNaN(start.getTime())) return currentMonthRange();
+  return { start, end: new Date(year, monthIndex + 1, 1), value: `${year}-${String(monthIndex + 1).padStart(2, "0")}` };
+}
+
+function isoDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
 }
 
 function adminConfigured() {
@@ -276,6 +293,7 @@ function layout(title, body) {
       <a href="/desk/tickets">Tickets</a>
       <a href="/desk/invoices">Invoices</a>
       <a href="/desk/expenses">Expenses</a>
+      <a href="/desk/reports">Reports</a>
       <a href="/desk/service-menu">Service Menu</a>
       <a href="/desk/logout">Logout</a>
     </nav>
@@ -497,6 +515,92 @@ function recentActivityTable(items) {
       <td>${esc(item.status || "")}</td>
       <td>${displayDateTime(item.date)}</td>
     </tr>`).join("") || `<tr><td colspan="5">No recent activity yet.</td></tr>`}</tbody></table>`;
+}
+
+function csvCell(value) {
+  const text = String(value ?? "");
+  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+function csvRows(rows) {
+  return rows.map((row) => row.map(csvCell).join(",")).join("\r\n") + "\r\n";
+}
+
+function sendCsv(response, type, rows) {
+  const stamp = new Date().toISOString().slice(0, 10);
+  response.setHeader("Content-Type", "text/csv; charset=utf-8");
+  response.setHeader("Content-Disposition", `attachment; filename="909-signal-it-${type}-${stamp}.csv"`);
+  response.send(csvRows(rows));
+}
+
+function moneyCsv(cents) {
+  return centsToInputValue(cents);
+}
+
+async function monthlyReport(monthValue) {
+  const month = monthRangeFromParam(monthValue);
+  const openInvoiceStatuses = ["Draft", "Sent", "Partially Paid", "Overdue"];
+  const [
+    paidRevenue,
+    expenses,
+    totalInvoiced,
+    openBalance,
+    newLeads,
+    convertedLeads,
+    completedJobs,
+    paidInvoices,
+    unpaidInvoices,
+    reviewRequestsSent,
+    reviewsReceived
+  ] = await Promise.all([
+    prisma.invoice.aggregate({ where: { status: "Paid", paidAt: { gte: month.start, lt: month.end } }, _sum: { totalCents: true } }),
+    prisma.expense.aggregate({ where: { expenseDate: { gte: month.start, lt: month.end } }, _sum: { amountCents: true } }),
+    prisma.invoice.aggregate({ where: { createdAt: { gte: month.start, lt: month.end }, status: { notIn: ["Void", "Refunded"] } }, _sum: { totalCents: true } }),
+    prisma.invoice.aggregate({ where: { status: { in: openInvoiceStatuses } }, _sum: { totalCents: true } }),
+    prisma.lead.count({ where: { createdAt: { gte: month.start, lt: month.end } } }),
+    prisma.lead.count({ where: { createdAt: { gte: month.start, lt: month.end }, OR: [{ tickets: { some: {} } }, { invoices: { some: {} } }] } }),
+    prisma.ticket.count({ where: { status: { in: ["Completed", "Closed"] }, completedAt: { gte: month.start, lt: month.end } } }),
+    prisma.invoice.count({ where: { status: "Paid", paidAt: { gte: month.start, lt: month.end } } }),
+    prisma.invoice.count({ where: { status: { in: openInvoiceStatuses } } }),
+    prisma.ticket.count({ where: { reviewRequested: true, reviewReceived: false, updatedAt: { gte: month.start, lt: month.end } } }),
+    prisma.ticket.count({ where: { reviewReceived: true, updatedAt: { gte: month.start, lt: month.end } } })
+  ]);
+  const paidRevenueCents = paidRevenue._sum.totalCents || 0;
+  const expenseCents = expenses._sum.amountCents || 0;
+  return {
+    month: month.value,
+    paidRevenueCents,
+    expenseCents,
+    estimatedProfitCents: paidRevenueCents - expenseCents,
+    totalInvoicedCents: totalInvoiced._sum.totalCents || 0,
+    openBalanceCents: openBalance._sum.totalCents || 0,
+    newLeads,
+    convertedLeads,
+    completedJobs,
+    paidInvoices,
+    unpaidInvoices,
+    reviewRequestsSent,
+    reviewsReceived
+  };
+}
+
+function monthlyReportRows(report) {
+  return [
+    ["Metric", "Value"],
+    ["Month", report.month],
+    ["Paid Revenue", moneyCsv(report.paidRevenueCents)],
+    ["Expenses", moneyCsv(report.expenseCents)],
+    ["Estimated Profit", moneyCsv(report.estimatedProfitCents)],
+    ["Total Invoiced", moneyCsv(report.totalInvoicedCents)],
+    ["Open Balance", moneyCsv(report.openBalanceCents)],
+    ["New Leads", report.newLeads],
+    ["Converted Leads", report.convertedLeads],
+    ["Completed Jobs", report.completedJobs],
+    ["Paid Invoices", report.paidInvoices],
+    ["Unpaid Invoices", report.unpaidInvoices],
+    ["Review Requests Sent", report.reviewRequestsSent],
+    ["Reviews Received", report.reviewsReceived]
+  ];
 }
 
 function expenseLinkSummary(expense) {
@@ -1286,7 +1390,100 @@ app.get("/desk", requireAuth, async (request, response) => {
     ${attentionCard("Tickets needing review request", ticketsNeedingReview, "/desk/tickets")}
     ${attentionCard("Sent/unpaid invoices", sentUnpaidInvoices, "/desk/invoices")}
   </div></section>
+  <section class="card"><h2>Reports & Exports</h2><p class="muted">Download CSV records for bookkeeping, taxes, and backups.</p><a class="button" href="/desk/reports">Open Reports</a></section>
   <section class="card"><h2>Recent Activity</h2>${activityItems.length ? recentActivityTable(activityItems) : `<p class="muted">No recent activity yet.</p>`}</section>`));
+});
+
+app.get("/desk/reports", requireAuth, async (request, response) => {
+  const report = await monthlyReport(request.query.month);
+  response.send(layout("Reports", `<section class="card">
+    <h1>Reports</h1>
+    <p class="muted">Download CSV records for backups, taxes, bookkeeping, and monthly review.</p>
+  </section>
+  <section class="card">
+    <h2>Data Exports</h2>
+    <div class="row">
+      <a class="button" href="/desk/reports/export/leads.csv">Export Leads CSV</a>
+      <a class="button" href="/desk/reports/export/customers.csv">Export Customers CSV</a>
+      <a class="button" href="/desk/reports/export/tickets.csv">Export Tickets CSV</a>
+      <a class="button" href="/desk/reports/export/invoices.csv">Export Invoices CSV</a>
+      <a class="button" href="/desk/reports/export/expenses.csv">Export Expenses CSV</a>
+    </div>
+  </section>
+  <section class="card">
+    <h2>Monthly Business Report</h2>
+    <form method="get" action="/desk/reports" class="row">
+      <label>Month <input type="month" name="month" value="${esc(report.month)}"></label>
+      <button>View Month</button>
+      <a class="button" href="/desk/reports/export/monthly.csv?month=${esc(report.month)}">Export Monthly Report CSV</a>
+    </form>
+    <div class="grid">
+      ${metricCard("Paid revenue", dollars(report.paidRevenueCents))}
+      ${metricCard("Expenses", dollars(report.expenseCents))}
+      ${metricCard("Estimated profit", dollars(report.estimatedProfitCents))}
+      ${metricCard("Total invoiced", dollars(report.totalInvoicedCents))}
+      ${metricCard("Open balance", dollars(report.openBalanceCents))}
+      ${metricCard("New leads", report.newLeads)}
+      ${metricCard("Converted leads", report.convertedLeads)}
+      ${metricCard("Completed jobs", report.completedJobs)}
+      ${metricCard("Paid invoices", report.paidInvoices)}
+      ${metricCard("Unpaid invoices", report.unpaidInvoices)}
+      ${metricCard("Review requests sent", report.reviewRequestsSent)}
+      ${metricCard("Reviews received", report.reviewsReceived)}
+    </div>
+  </section>
+  <section class="card">
+    <h2>Bookkeeping Helper</h2>
+    <p class="muted">Use invoice and expense exports for bookkeeping and tax preparation. Estimated profit is calculated as paid revenue minus recorded expenses.</p>
+  </section>`));
+});
+
+app.get("/desk/reports/export/leads.csv", requireAuth, async (request, response) => {
+  const leads = await prisma.lead.findMany({ orderBy: { createdAt: "desc" } });
+  sendCsv(response, "leads", [
+    ["id", "createdAt", "updatedAt", "name", "phone", "email", "city", "serviceType", "urgency", "status", "source", "message"],
+    ...leads.map((lead) => [lead.id, isoDate(lead.createdAt), isoDate(lead.updatedAt), lead.name, lead.phone, lead.email, lead.city, lead.serviceRequested, lead.urgency, lead.status, lead.source, lead.message])
+  ]);
+});
+
+app.get("/desk/reports/export/customers.csv", requireAuth, async (request, response) => {
+  const customers = await prisma.customer.findMany({ orderBy: { updatedAt: "desc" } });
+  sendCsv(response, "customers", [
+    ["id", "createdAt", "updatedAt", "name", "businessName", "customerType", "phone", "email", "city", "address", "notes"],
+    ...customers.map((customer) => [customer.id, isoDate(customer.createdAt), isoDate(customer.updatedAt), customer.name, customer.businessName, customer.customerType, customer.phone, customer.email, customer.city, customer.address, customer.notes])
+  ]);
+});
+
+app.get("/desk/reports/export/tickets.csv", requireAuth, async (request, response) => {
+  const tickets = await prisma.ticket.findMany({ include: { customer: true, lead: true }, orderBy: { updatedAt: "desc" } });
+  sendCsv(response, "tickets", [
+    ["id", "ticketNumber", "createdAt", "updatedAt", "completedAt", "customerName", "customerPhone", "customerEmail", "serviceType", "status", "issue", "diagnosis", "workPerformed", "partsNeeded", "partsUsed", "timeSpentMinutes", "priceQuoted", "finalPrice", "reviewRequested", "reviewReceived"],
+    ...tickets.map((ticket) => {
+      const contact = ticket.customer || ticket.lead || {};
+      return [ticket.id, ticket.ticketNumber, isoDate(ticket.createdAt), isoDate(ticket.updatedAt), isoDate(ticket.completedAt), contact.name, contact.phone, contact.email, ticket.serviceType, ticket.status, ticket.issue, ticket.diagnosis, ticket.workPerformed, ticket.partsNeeded, ticket.partsUsed, ticket.timeSpentMinutes, ticket.priceQuoted, ticket.finalPrice, ticket.reviewRequested, ticket.reviewReceived];
+    })
+  ]);
+});
+
+app.get("/desk/reports/export/invoices.csv", requireAuth, async (request, response) => {
+  const invoices = await prisma.invoice.findMany({ orderBy: { createdAt: "desc" } });
+  sendCsv(response, "invoices", [
+    ["id", "invoiceNumber", "createdAt", "updatedAt", "dueDate", "paidAt", "customerName", "customerEmail", "customerPhone", "status", "total", "subtotal", "tax", "stripeCheckoutSessionId", "stripePaymentLinkUrl"],
+    ...invoices.map((invoice) => [invoice.id, invoice.invoiceNumber, isoDate(invoice.createdAt), isoDate(invoice.updatedAt), isoDate(invoice.dueDate), isoDate(invoice.paidAt), invoice.customerName, invoice.customerEmail, invoice.customerPhone, invoice.status, moneyCsv(invoice.totalCents), moneyCsv(invoice.subtotalCents), moneyCsv(invoice.taxCents), invoice.stripeCheckoutSessionId, invoice.paymentLink])
+  ]);
+});
+
+app.get("/desk/reports/export/expenses.csv", requireAuth, async (request, response) => {
+  const expenses = await prisma.expense.findMany({ include: { customer: true, ticket: true, invoice: true }, orderBy: { expenseDate: "desc" } });
+  sendCsv(response, "expenses", [
+    ["id", "createdAt", "updatedAt", "expenseDate", "description", "vendor", "category", "amount", "paymentMethod", "customerName", "ticketId", "invoiceId", "notes"],
+    ...expenses.map((expense) => [expense.id, isoDate(expense.createdAt), isoDate(expense.updatedAt), isoDate(expense.expenseDate), expense.description, expense.vendor, expense.category, moneyCsv(expense.amountCents), expense.paymentMethod, expense.customer?.name, expense.ticketId, expense.invoiceId, expense.notes])
+  ]);
+});
+
+app.get("/desk/reports/export/monthly.csv", requireAuth, async (request, response) => {
+  const report = await monthlyReport(request.query.month);
+  sendCsv(response, `monthly-${report.month}`, monthlyReportRows(report));
 });
 
 app.get("/desk/expenses", requireAuth, async (request, response) => {

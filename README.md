@@ -140,6 +140,10 @@ The standard service menu is used for quick invoice line items and can be edited
 
 Expense tracking allows 909 Signal Desk to track parts, tools, subscriptions, travel, marketing, and other business costs. Dashboard profit is estimated as paid revenue minus recorded expenses.
 
+### Reports and CSV Exports
+
+Reports and CSV exports allow 909 Signal Desk to download leads, customers, tickets, invoices, expenses, and monthly revenue/expense/profit summaries for backup and bookkeeping.
+
 ## Configured Contact
 
 - `909-260-8660`
