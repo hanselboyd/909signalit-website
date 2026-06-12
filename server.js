@@ -140,6 +140,18 @@ function dateValue(value) {
   return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 16);
 }
 
+function displayDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString();
+}
+
+function displayDateTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString();
+}
+
 function dateOnlyValue(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -294,6 +306,20 @@ function leadTable(leads) {
     </tr>`).join("") || `<tr><td colspan="5">No leads found.</td></tr>`}</tbody></table>`;
 }
 
+function customerTable(customers) {
+  return `<table><thead><tr><th>Name</th><th>Business</th><th>Phone</th><th>Email</th><th>City</th><th>Open Balance</th><th>Last Updated</th><th></th></tr></thead><tbody>${customers.map((customer) => `
+    <tr>
+      <td><a href="/desk/customers/${customer.id}">${esc(customer.name)}</a></td>
+      <td>${esc(customer.businessName || "")}</td>
+      <td>${esc(customer.phone || "")}</td>
+      <td>${esc(customer.email || "")}</td>
+      <td>${esc(customer.city || "")}</td>
+      <td>${dollars(openInvoiceBalance(customer.invoices || []))}</td>
+      <td>${displayDate(customer.updatedAt)}</td>
+      <td><a href="/desk/customers/${customer.id}">View</a></td>
+    </tr>`).join("") || `<tr><td colspan="8">No customers found.</td></tr>`}</tbody></table>`;
+}
+
 function ticketTable(tickets) {
   return `<table><thead><tr><th>Ticket</th><th>Title</th><th>Status</th><th>Review</th><th>Appointment</th><th>Updated</th></tr></thead><tbody>${tickets.map((ticket) => `
     <tr>
@@ -324,6 +350,76 @@ function invoiceTable(invoices) {
     </tr>`).join("") || `<tr><td colspan="6">No invoices found.</td></tr>`}</tbody></table>`;
 }
 
+function openInvoiceBalance(invoices) {
+  const openStatuses = new Set(["Draft", "Sent", "Partially Paid", "Overdue"]);
+  return invoices.filter((invoice) => openStatuses.has(invoice.status)).reduce((total, invoice) => total + (Number(invoice.totalCents) || 0), 0);
+}
+
+function invoiceFinancialSummary(invoices) {
+  const paidInvoices = invoices.filter((invoice) => invoice.status === "Paid");
+  const openInvoices = invoices.filter((invoice) => ["Draft", "Sent", "Partially Paid", "Overdue"].includes(invoice.status));
+  return {
+    totalInvoiced: invoices.filter((invoice) => !["Void", "Refunded"].includes(invoice.status)).reduce((total, invoice) => total + (Number(invoice.totalCents) || 0), 0),
+    totalPaid: paidInvoices.reduce((total, invoice) => total + (Number(invoice.totalCents) || 0), 0),
+    openBalance: openInvoiceBalance(invoices),
+    invoiceCount: invoices.length,
+    paidCount: paidInvoices.length,
+    openCount: openInvoices.length
+  };
+}
+
+function customerTicketHistoryTable(tickets) {
+  return `<table><thead><tr><th>Ticket</th><th>Title</th><th>Service</th><th>Status</th><th>Appointment</th><th>Review Requested</th><th>Review Received</th><th>Created</th></tr></thead><tbody>${tickets.map((ticket) => `
+    <tr>
+      <td><a href="/desk/tickets/${ticket.id}">${esc(ticket.ticketNumber)}</a></td>
+      <td>${esc(ticket.title)}</td>
+      <td>${esc(ticket.serviceType || "")}</td>
+      <td>${esc(ticket.status)}</td>
+      <td>${displayDateTime(ticket.appointmentAt)}</td>
+      <td>${ticket.reviewRequested ? "Yes" : "No"}</td>
+      <td>${ticket.reviewReceived ? "Yes" : "No"}</td>
+      <td>${displayDate(ticket.createdAt)}</td>
+    </tr>`).join("") || `<tr><td colspan="8">No tickets yet.</td></tr>`}</tbody></table>`;
+}
+
+function customerInvoiceHistoryTable(invoices) {
+  return `<table><thead><tr><th>Invoice</th><th>Status</th><th>Total</th><th>Due</th><th>Payment Link</th><th>Paid</th><th>Created</th></tr></thead><tbody>${invoices.map((invoice) => `
+    <tr>
+      <td><a href="/desk/invoices/${invoice.id}">${esc(invoice.invoiceNumber)}</a></td>
+      <td>${esc(invoice.status)}</td>
+      <td>${dollars(invoice.totalCents)}</td>
+      <td>${displayDate(invoice.dueDate)}</td>
+      <td>${invoice.paymentLink ? "Generated" : "Not generated"}</td>
+      <td>${displayDate(invoice.paidAt)}</td>
+      <td>${displayDate(invoice.createdAt)}</td>
+    </tr>`).join("") || `<tr><td colspan="7">No invoices yet.</td></tr>`}</tbody></table>`;
+}
+
+function relatedLeadHistoryTable(leads) {
+  return `<table><thead><tr><th>Lead</th><th>Service</th><th>Status</th><th>Source</th><th>City</th><th>Created</th></tr></thead><tbody>${leads.map((lead) => `
+    <tr>
+      <td><a href="/desk/leads/${lead.id}">Lead ${lead.id}</a></td>
+      <td>${esc(lead.serviceRequested)}</td>
+      <td>${esc(lead.status)}</td>
+      <td>${esc(lead.source || "")}</td>
+      <td>${esc(lead.city || "")}</td>
+      <td>${displayDate(lead.createdAt)}</td>
+    </tr>`).join("") || `<tr><td colspan="6">No related leads yet.</td></tr>`}</tbody></table>`;
+}
+
+function customerRecentActivity(tickets, invoices) {
+  const activities = [
+    ...tickets.map((ticket) => ({ date: ticket.updatedAt || ticket.createdAt, label: `Ticket ${ticket.ticketNumber}`, detail: `${ticket.status} - ${ticket.title}`, href: `/desk/tickets/${ticket.id}` })),
+    ...invoices.map((invoice) => ({ date: invoice.updatedAt || invoice.createdAt, label: `Invoice ${invoice.invoiceNumber}`, detail: `${invoice.status} - ${dollars(invoice.totalCents)}`, href: `/desk/invoices/${invoice.id}` }))
+  ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 8);
+  return `<table><thead><tr><th>Date</th><th>Activity</th><th>Details</th></tr></thead><tbody>${activities.map((item) => `
+    <tr>
+      <td>${displayDate(item.date)}</td>
+      <td><a href="${esc(item.href)}">${esc(item.label)}</a></td>
+      <td>${esc(item.detail)}</td>
+    </tr>`).join("") || `<tr><td colspan="3">No recent activity yet.</td></tr>`}</tbody></table>`;
+}
+
 function invoiceForm(action, values = {}, message = "") {
   const itemCount = Math.max(3, values.descriptions?.length || 0);
   const rows = Array.from({ length: itemCount }, (_, index) => `
@@ -337,6 +433,7 @@ function invoiceForm(action, values = {}, message = "") {
   return `<form method="post" action="${esc(action)}">
     <h1>New Invoice</h1>
     ${message}
+    <input type="hidden" name="customerId" value="${fieldValue(values, "customerId")}">
     <p class="muted">Estimate terms: This estimate is based on the information currently available and may change if additional issues, parts, labor, access problems, or customer-requested work are discovered. Estimate valid for 7 days unless otherwise stated. Client is responsible for backing up important data before service begins.</p>
     <section class="grid two">
       <label>Customer name <input name="customerName" value="${fieldValue(values, "customerName")}" required></label>
@@ -392,6 +489,21 @@ function invoiceForm(action, values = {}, message = "") {
       });
     })();
   </script>`;
+}
+
+function ticketForm(action, values = {}, message = "") {
+  return `<form method="post" action="${esc(action)}">
+    <h1>New Ticket</h1>
+    ${message}
+    <input type="hidden" name="customerId" value="${fieldValue(values, "customerId")}">
+    ${values.customerName ? `<p class="muted">Customer: <strong>${esc(values.customerName)}</strong></p>` : ""}
+    <label>Title <input name="title" value="${fieldValue(values, "title")}" required></label>
+    <label>Service type <select name="serviceType"><option value="">Select one</option>${statusOptions(serviceTypes, values.serviceType)}</select></label>
+    <label>Appointment <input name="appointmentAt" type="datetime-local" value="${fieldValue(values, "appointmentAt")}"></label>
+    <label>Issue <textarea name="issue">${fieldValue(values, "issue")}</textarea></label>
+    <label>Customer notes <textarea name="customerNotes">${fieldValue(values, "customerNotes")}</textarea></label>
+    <button type="submit">Create Ticket</button>
+  </form>`;
 }
 
 async function nextInvoiceNumber() {
@@ -792,12 +904,48 @@ app.post("/desk/leads/:id/ticket", requireAuth, async (request, response) => {
 
 app.get("/desk/customers", requireAuth, async (request, response) => {
   const q = String(request.query.q || "");
-  const customers = await prisma.customer.findMany({ where: searchWhere(q, ["name", "phone", "email", "businessName", "city"]), orderBy: { updatedAt: "desc" } });
+  const customers = await prisma.customer.findMany({ where: searchWhere(q, ["name", "phone", "email", "businessName", "city"]), include: { invoices: true }, orderBy: { updatedAt: "desc" } });
   response.send(layout("Customers", `<section class="card"><h1>Customers</h1><form method="get" class="row"><input name="q" value="${esc(q)}" placeholder="Search customers"><button>Search</button></form></section>
-    <table><thead><tr><th>Name</th><th>Contact</th><th>City</th><th>Updated</th></tr></thead><tbody>${customers.map((customer) => `<tr><td><a href="/desk/customers/${customer.id}">${esc(customer.name)}</a><br>${esc(customer.businessName || "")}</td><td>${esc(customer.phone || "")}<br>${esc(customer.email || "")}</td><td>${esc(customer.city || "")}</td><td>${new Date(customer.updatedAt).toLocaleDateString()}</td></tr>`).join("") || `<tr><td colspan="4">No customers found.</td></tr>`}</tbody></table>`));
+    ${customerTable(customers)}`));
 });
 
 app.get("/desk/customers/:id", requireAuth, async (request, response) => {
+  const customer = await prisma.customer.findUnique({
+    where: { id: Number(request.params.id) },
+    include: {
+      tickets: { include: { lead: true }, orderBy: { updatedAt: "desc" } },
+      invoices: { include: { lead: true }, orderBy: { createdAt: "desc" } }
+    }
+  });
+  if (!customer) return response.status(404).send(layout("Customer not found", "<section class='card'>Customer not found.</section>"));
+  const summary = invoiceFinancialSummary(customer.invoices);
+  const relatedLeads = Array.from(new Map([...customer.tickets.map((ticket) => ticket.lead).filter(Boolean), ...customer.invoices.map((invoice) => invoice.lead).filter(Boolean)].map((lead) => [lead.id, lead])).values())
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  response.send(layout(customer.name, `<section class="card">
+      <div class="row"><h1>${esc(customer.name)}</h1><a class="button" href="/desk/tickets/new?customerId=${customer.id}">New Ticket for Customer</a><a class="button" href="/desk/invoices/new?customerId=${customer.id}">New Invoice for Customer</a><a class="button" href="/desk/customers">Back to Customers</a></div>
+      <p><strong>Business:</strong> ${esc(customer.businessName || "")}</p>
+      <p><strong>Type:</strong> ${esc(customer.customerType || "")}</p>
+      <p><strong>Phone:</strong> ${esc(customer.phone || "")}<br><strong>Email:</strong> ${esc(customer.email || "")}</p>
+      <p><strong>Address/City:</strong> ${esc([customer.address, customer.city].filter(Boolean).join(", "))}</p>
+      <p><strong>Created:</strong> ${displayDate(customer.createdAt)}<br><strong>Updated:</strong> ${displayDate(customer.updatedAt)}</p>
+      ${customer.notes ? `<p><strong>Notes:</strong><br>${esc(customer.notes)}</p>` : `<p class="muted">No customer notes yet.</p>`}
+    </section>
+    <section class="grid">
+      <div class="card metric"><span>Total invoiced</span><strong>${dollars(summary.totalInvoiced)}</strong></div>
+      <div class="card metric"><span>Total paid</span><strong>${dollars(summary.totalPaid)}</strong></div>
+      <div class="card metric"><span>Open balance</span><strong>${dollars(summary.openBalance)}</strong></div>
+      <div class="card metric"><span>Invoices</span><strong>${summary.invoiceCount}</strong></div>
+      <div class="card metric"><span>Paid invoices</span><strong>${summary.paidCount}</strong></div>
+      <div class="card metric"><span>Open invoices</span><strong>${summary.openCount}</strong></div>
+    </section>
+    <form method="post" action="/desk/customers/${customer.id}/update"><h2>Notes</h2><label>Notes <textarea name="notes">${esc(customer.notes || "")}</textarea></label><button>Save Notes</button></form>
+    <section class="card"><h2>Related Tickets</h2>${customerTicketHistoryTable(customer.tickets)}</section>
+    <section class="card"><h2>Related Invoices</h2>${customerInvoiceHistoryTable(customer.invoices)}</section>
+    <section class="card"><h2>Related Leads</h2>${relatedLeadHistoryTable(relatedLeads)}</section>
+    <section class="card"><h2>Recent Activity</h2>${customerRecentActivity(customer.tickets, customer.invoices)}</section>`));
+});
+
+app.get("/desk/customers/:id/summary", requireAuth, async (request, response) => {
   const customer = await prisma.customer.findUnique({ where: { id: Number(request.params.id) }, include: { tickets: true } });
   if (!customer) return response.status(404).send(layout("Customer not found", "<section class='card'>Customer not found.</section>"));
   response.send(layout(customer.name, `<section class="card"><h1>${esc(customer.name)}</h1><p>${esc(customer.phone || "")} · ${esc(customer.email || "")}</p><p>${esc(customer.businessName || "")} ${esc(customer.city || "")}</p></section>
@@ -818,6 +966,37 @@ app.get("/desk/tickets", requireAuth, async (request, response) => {
   response.send(layout("Tickets", `<section class="card"><h1>Tickets</h1><form method="get" class="row"><input name="q" value="${esc(q)}" placeholder="Search tickets"><select name="status"><option value="">All statuses</option>${statusOptions(ticketStatuses, status)}</select><button>Filter</button></form></section>${ticketTable(tickets)}`));
 });
 
+app.get("/desk/tickets/new", requireAuth, async (request, response) => {
+  const customerId = Number(request.query.customerId);
+  const customer = Number.isInteger(customerId) && customerId > 0 ? await prisma.customer.findUnique({ where: { id: customerId } }) : null;
+  response.send(layout("New Ticket", ticketForm("/desk/tickets/new", {
+    customerId: customer?.id || "",
+    customerName: customer?.name || "",
+    title: customer ? "IT Support" : ""
+  })));
+});
+
+app.post("/desk/tickets/new", requireAuth, async (request, response) => {
+  const customerId = Number(request.body.customerId);
+  const customer = Number.isInteger(customerId) && customerId > 0 ? await prisma.customer.findUnique({ where: { id: customerId } }) : null;
+  const data = {
+    ticketNumber: `909-${Date.now()}`,
+    customerId: customer?.id || null,
+    title: String(request.body.title || "").trim(),
+    serviceType: request.body.serviceType || null,
+    issue: request.body.issue?.trim() || null,
+    customerNotes: request.body.customerNotes?.trim() || null,
+    appointmentAt: request.body.appointmentAt ? new Date(request.body.appointmentAt) : null,
+    status: "New"
+  };
+  if (!data.title) {
+    response.status(400).send(layout("New Ticket", ticketForm("/desk/tickets/new", { ...request.body, customerName: customer?.name || "" }, `<p class="danger">Title is required.</p>`)));
+    return;
+  }
+  const ticket = await prisma.ticket.create({ data });
+  response.redirect(`/desk/tickets/${ticket.id}`);
+});
+
 app.get("/desk/invoices", requireAuth, async (request, response) => {
   const q = String(request.query.q || "");
   const status = String(request.query.status || "");
@@ -830,13 +1009,21 @@ app.get("/desk/service-menu", requireAuth, (request, response) => {
   response.send(layout("Service Menu", `<section class="card"><div class="row"><h1>Service Menu</h1><a class="button" href="/desk/invoices/new">New Invoice</a></div><p class="muted">Read-only standard services used for quick invoice line items. Edit the service menu in code for now.</p></section>${serviceMenuTable()}`));
 });
 
-app.get("/desk/invoices/new", requireAuth, (request, response) => {
-  response.send(layout("New Invoice", invoiceForm("/desk/invoices")));
+app.get("/desk/invoices/new", requireAuth, async (request, response) => {
+  const customerId = Number(request.query.customerId);
+  const customer = Number.isInteger(customerId) && customerId > 0 ? await prisma.customer.findUnique({ where: { id: customerId } }) : null;
+  response.send(layout("New Invoice", invoiceForm("/desk/invoices", {
+    customerId: customer?.id || "",
+    customerName: customer?.name || "",
+    customerEmail: customer?.email || "",
+    customerPhone: customer?.phone || ""
+  })));
 });
 
 app.post("/desk/invoices", requireAuth, async (request, response) => {
   const body = request.body;
   const values = {
+    customerId: body.customerId,
     customerName: body.customerName,
     customerEmail: body.customerEmail,
     customerPhone: body.customerPhone,
@@ -860,9 +1047,12 @@ app.post("/desk/invoices", requireAuth, async (request, response) => {
     return;
   }
 
+  const customerId = Number(body.customerId);
+  const customer = Number.isInteger(customerId) && customerId > 0 ? await prisma.customer.findUnique({ where: { id: customerId } }) : null;
   const invoice = await prisma.invoice.create({
     data: {
       invoiceNumber: await nextInvoiceNumber(),
+      customerId: customer?.id || null,
       customerName: body.customerName.trim(),
       customerEmail: body.customerEmail?.trim() || null,
       customerPhone: body.customerPhone?.trim() || null,
