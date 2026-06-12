@@ -1,4 +1,4 @@
-import express from "express";
+﻿import express from "express";
 import session from "express-session";
 import { PrismaClient } from "@prisma/client";
 import Stripe from "stripe";
@@ -8,7 +8,7 @@ import { createServer } from "node:http";
 import { extname, join } from "node:path";
 import { URL } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
-import { isLeadNotificationConfigured, sendLeadNotification } from "./src/server/email.js";
+import { isLeadNotificationConfigured, sendLeadCustomerAcknowledgement, sendLeadNotification } from "./src/server/email.js";
 
 const app = express();
 const server = createServer(app);
@@ -516,14 +516,42 @@ function searchWhere(q, fields) {
 }
 
 function leadTable(leads) {
-  return `<table><thead><tr><th>Name</th><th>Contact</th><th>Service</th><th>Status</th><th>Created</th></tr></thead><tbody>${leads.map((lead) => `
+  return `<table><thead><tr><th>Name</th><th>Contact</th><th>Service</th><th>Urgency</th><th>Source</th><th>Status</th><th>Created</th></tr></thead><tbody>${leads.map((lead) => `
     <tr>
       <td><a href="/desk/leads/${lead.id}">${esc(lead.name)}</a><br><span class="muted">${esc(lead.businessName || lead.customerType)}</span></td>
       <td>${esc(lead.phone)}<br>${esc(lead.email || "")}</td>
       <td>${esc(lead.serviceRequested)}<br><span class="muted">${esc(lead.city)}</span></td>
+      <td>${esc(lead.urgency)}</td>
+      <td>${esc(lead.source || "")}</td>
       <td>${esc(lead.status)}</td>
       <td>${new Date(lead.createdAt).toLocaleDateString()}</td>
-    </tr>`).join("") || `<tr><td colspan="5">No leads found.</td></tr>`}</tbody></table>`;
+    </tr>`).join("") || `<tr><td colspan="7">No leads found.</td></tr>`}</tbody></table>`;
+}
+
+function leadQuickDetails(lead) {
+  return `<dl class="details">
+    <dt>Customer</dt><dd>${esc(lead.name)}</dd>
+    <dt>Phone</dt><dd>${esc(lead.phone)}</dd>
+    <dt>Email</dt><dd>${esc(lead.email || "Not provided")}</dd>
+    <dt>Business</dt><dd>${esc(lead.businessName || "Not provided")}</dd>
+    <dt>Customer type</dt><dd>${esc(lead.customerType)}</dd>
+    <dt>City</dt><dd>${esc(lead.city)}</dd>
+    <dt>Service requested</dt><dd>${esc(lead.serviceRequested)}</dd>
+    <dt>Urgency</dt><dd>${esc(lead.urgency)}</dd>
+    <dt>Preferred contact</dt><dd>${esc(lead.preferredContact)}</dd>
+    <dt>Source</dt><dd>${esc(lead.source || "")}</dd>
+  </dl>`;
+}
+
+function leadNextSteps() {
+  return `<section class="card"><h2>Next Steps for New Website Leads</h2>
+    <ol>
+      <li>Call or email the customer using their preferred contact method.</li>
+      <li>Decide whether remote support or onsite service is the right fit.</li>
+      <li>Convert to a customer, ticket, or work order if the request is qualified.</li>
+      <li>Send service terms if work is scheduled or an invoice will be created.</li>
+    </ol>
+  </section>`;
 }
 
 function customerTable(customers) {
@@ -1633,6 +1661,7 @@ app.post("/api/leads", async (request, response) => {
     const pageContext = String(body.pageContext || "").trim();
     const remoteSupportAcceptable = String(body.remoteSupportAcceptable || "").trim();
     const notes = [
+      "Website lead received. Review and follow up from Signal Desk.",
       pageContext ? `Page/source context: ${pageContext}` : "",
       remoteSupportAcceptable ? `Remote support acceptable: ${remoteSupportAcceptable}` : "",
       body.notes?.trim() || ""
@@ -1658,8 +1687,11 @@ app.post("/api/leads", async (request, response) => {
     sendLeadNotification(lead).catch((error) => {
       console.error("Lead notification email failed:", error?.message || error);
     });
+    sendLeadCustomerAcknowledgement(lead).catch((error) => {
+      console.error("Lead customer acknowledgement email failed:", error?.message || error);
+    });
 
-    response.json({ ok: true, message: "Thanks — your request was received. 909 Signal IT will review the issue and follow up as soon as possible." });
+    response.json({ ok: true, message: "Thanks - your request was received. 909 Signal IT will review the issue and follow up as soon as possible." });
   } catch (error) {
     console.error(error);
     response.status(500).json({ ok: false, message: "The request could not be saved. Please call or text 909-260-8660." });
@@ -2299,7 +2331,15 @@ app.post("/desk/leads/new", requireAuth, async (request, response) => {
 app.get("/desk/leads/:id", requireAuth, async (request, response) => {
   const lead = await prisma.lead.findUnique({ where: { id: Number(request.params.id) }, include: { tickets: true } });
   if (!lead) return response.status(404).send(layout("Lead not found", "<section class='card'>Lead not found.</section>"));
-  response.send(layout(`Lead ${lead.id}`, `<section class="card"><h1>${esc(lead.name)}</h1><p>${esc(lead.phone)} · ${esc(lead.email || "")}</p><p>${esc(lead.serviceRequested)} in ${esc(lead.city)}</p><p>${esc(lead.message)}</p></section>
+  response.send(layout(`Lead ${lead.id}`, `<section class="card"><h1>${esc(lead.name)}</h1><p>${esc(lead.phone)} Â· ${esc(lead.email || "")}</p><p>${esc(lead.serviceRequested)} in ${esc(lead.city)}</p><p>${esc(lead.message)}</p></section>
+    <section class="grid two">
+      <section class="card"><h2>Lead Details</h2>${leadQuickDetails(lead)}</section>
+      ${leadNextSteps()}
+    </section>
+    <section class="grid two">
+      <section class="card"><h2>Issue Description</h2><p>${esc(lead.message)}</p></section>
+      <section class="card"><h2>Website Intake Notes</h2><p>${esc(lead.notes || "No website intake notes yet.").replaceAll("\n", "<br>")}</p></section>
+    </section>
     <section class="grid two">
       <form method="post" action="/desk/leads/${lead.id}/update"><h2>Update Lead</h2><label>Status <select name="status">${statusOptions(leadStatuses, lead.status)}</select></label><label>Notes <textarea name="notes">${esc(lead.notes || "")}</textarea></label><button>Save Lead</button></form>
       <form method="post" action="/desk/leads/${lead.id}/note"><h2>Add Follow-Up Note</h2><label>Note <textarea name="note"></textarea></label><button>Add Note</button></form>
@@ -2412,7 +2452,7 @@ app.get("/desk/customers/:id", requireAuth, async (request, response) => {
 app.get("/desk/customers/:id/summary", requireAuth, async (request, response) => {
   const customer = await prisma.customer.findUnique({ where: { id: Number(request.params.id) }, include: { tickets: true } });
   if (!customer) return response.status(404).send(layout("Customer not found", "<section class='card'>Customer not found.</section>"));
-  response.send(layout(customer.name, `<section class="card"><h1>${esc(customer.name)}</h1><p>${esc(customer.phone || "")} · ${esc(customer.email || "")}</p><p>${esc(customer.businessName || "")} ${esc(customer.city || "")}</p></section>
+  response.send(layout(customer.name, `<section class="card"><h1>${esc(customer.name)}</h1><p>${esc(customer.phone || "")} Â· ${esc(customer.email || "")}</p><p>${esc(customer.businessName || "")} ${esc(customer.city || "")}</p></section>
     <form method="post" action="/desk/customers/${customer.id}/update"><h2>Notes</h2><label>Notes <textarea name="notes">${esc(customer.notes || "")}</textarea></label><button>Save Notes</button></form>
     <section class="card"><h2>Related Tickets</h2>${ticketTable(customer.tickets)}</section>`));
 });
@@ -2594,7 +2634,7 @@ app.get("/desk/invoices/:id", requireAuth, async (request, response) => {
     <section class="card">
       <div class="row"><h1>${esc(invoice.invoiceNumber)}</h1><a class="button" href="/desk/expenses/new?invoiceId=${invoice.id}">Add Expense for Invoice</a><a class="button" href="/desk/invoices">Invoices</a></div>
       <p><strong>${esc(invoice.customerName)}</strong><br>${esc(invoice.customerEmail || "")}<br>${esc(invoice.customerPhone || "")}</p>
-      <p>Status: <strong>${esc(invoice.status)}</strong>${invoice.dueDate ? ` Â· Due ${new Date(invoice.dueDate).toLocaleDateString()}` : ""}</p>
+      <p>Status: <strong>${esc(invoice.status)}</strong>${invoice.dueDate ? ` Ã‚Â· Due ${new Date(invoice.dueDate).toLocaleDateString()}` : ""}</p>
       ${invoice.paymentLink ? `<p>Payment link: <a href="${esc(invoice.paymentLink)}" target="_blank" rel="noopener">${esc(invoice.paymentLink)}</a></p>` : `<p class="muted">No payment link generated yet.</p>`}
       ${invoice.ticket ? `<p>Related ticket: <a href="/desk/tickets/${invoice.ticket.id}">${esc(invoice.ticket.ticketNumber)}</a></p>` : ""}
       ${invoice.lead ? `<p>Related lead: <a href="/desk/leads/${invoice.lead.id}">${esc(invoice.lead.name)}</a></p>` : ""}

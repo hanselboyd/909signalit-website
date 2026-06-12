@@ -1,4 +1,4 @@
-const toggle = document.querySelector(".nav-toggle");
+﻿const toggle = document.querySelector(".nav-toggle");
 const nav = document.querySelector("#site-nav");
 
 if (toggle && nav) {
@@ -40,7 +40,7 @@ leadForms.forEach((leadForm) => {
         body: JSON.stringify(Object.fromEntries(new FormData(leadForm)))
       });
       const result = await response.json();
-      leadFormMessage.textContent = result.message || "Thanks — your request was received. 909 Signal IT will review the issue and follow up as soon as possible.";
+      leadFormMessage.textContent = result.message || "Thanks - your request was received. 909 Signal IT will review the issue and follow up as soon as possible.";
       leadFormMessage.classList.toggle("form-error", !response.ok);
       leadFormMessage.classList.toggle("form-success", response.ok);
       if (response.ok) leadForm.reset();

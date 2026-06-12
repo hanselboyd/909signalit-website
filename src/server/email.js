@@ -1,4 +1,4 @@
-import { Resend } from "resend";
+﻿import { Resend } from "resend";
 
 const notifyEmail = process.env.LEAD_NOTIFY_EMAIL || "support@909signalit.com";
 const fromEmail = process.env.FROM_EMAIL;
@@ -39,6 +39,7 @@ export async function sendLeadNotification(lead) {
     `Urgency: ${clean(lead.urgency)}`,
     `Preferred contact: ${clean(lead.preferredContact)}`,
     `Source: ${clean(lead.source)}`,
+    `Notes: ${clean(lead.notes)}`,
     "",
     "Message:",
     clean(lead.message),
@@ -62,12 +63,48 @@ export async function sendLeadNotification(lead) {
     </ul>
     <p><strong>Message:</strong></p>
     <p>${htmlEscape(lead.message).replaceAll("\n", "<br>")}</p>
+    <p><strong>Notes:</strong></p>
+    <p>${htmlEscape(lead.notes).replaceAll("\n", "<br>")}</p>
     <p><a href="${crmUrl}">Open lead in 909 Signal Desk</a></p>
   `;
 
   return resend.emails.send({
     from: fromEmail,
     to: notifyEmail,
+    subject,
+    text,
+    html
+  });
+}
+
+export async function sendLeadCustomerAcknowledgement(lead) {
+  if (!isLeadNotificationConfigured() || !lead.email) {
+    return { skipped: true };
+  }
+
+  const resend = new Resend(resendApiKey);
+  const subject = "909 Signal IT received your request";
+  const text = [
+    `Hi ${clean(lead.name)},`,
+    "",
+    "Thanks - your request was received. 909 Signal IT will review the issue and follow up as soon as possible.",
+    "",
+    "If anything changes or the issue becomes urgent, call or text 909-260-8660.",
+    "",
+    "909 Signal IT",
+    "support@909signalit.com"
+  ].join("\n");
+
+  const html = `
+    <p>Hi ${htmlEscape(lead.name)},</p>
+    <p>Thanks - your request was received. 909 Signal IT will review the issue and follow up as soon as possible.</p>
+    <p>If anything changes or the issue becomes urgent, call or text <a href="tel:+19092608660">909-260-8660</a>.</p>
+    <p>909 Signal IT<br><a href="mailto:support@909signalit.com">support@909signalit.com</a></p>
+  `;
+
+  return resend.emails.send({
+    from: fromEmail,
+    to: lead.email,
     subject,
     text,
     html
