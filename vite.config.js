@@ -18,6 +18,8 @@ export default defineConfig({
         itSupportOntario: page("./it-support-ontario-ca.html"),
         computerRepairOntario: page("./computer-repair-ontario-ca.html"),
         smallBusinessItSupportOntario: page("./small-business-it-support-ontario-ca.html"),
+        networkSupportOntario: page("./network-support-ontario-ca.html"),
+        microsoft365EmailSupportOntario: page("./microsoft-365-email-support-ontario-ca.html"),
         wifiTroubleshootingOntario: page("./wifi-troubleshooting-ontario-ca.html"),
         printerSetupOntario: page("./printer-setup-ontario-ca.html"),
         posSupportOntario: page("./pos-support-ontario-ca.html")
