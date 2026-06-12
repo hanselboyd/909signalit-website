@@ -140,6 +140,10 @@ npx prisma generate
 
 - Calendly booking URL: `https://calendly.com/aiindextv/30min`
 
+## Brand Assets
+
+- Apple Business Connect logo asset: `public/assets/apple-business-logo-1024.png`
+
 ## Placeholders To Replace
 
 - Future images in `public/assets/`
