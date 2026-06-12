@@ -134,6 +134,25 @@ function parsePositiveInt(value, fallback = 1) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function parseOptionalMinutes(value) {
+  const cleaned = String(value ?? "").trim();
+  if (!cleaned) return null;
+  const parsed = Number.parseInt(cleaned, 10);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function formatMoneyValue(value) {
+  const cents = parseMoneyToCents(value);
+  return cents == null ? "" : dollars(cents);
+}
+
+function parseOptionalMoneyDecimal(value) {
+  const cleaned = String(value ?? "").trim();
+  if (!cleaned) return null;
+  const cents = parseMoneyToCents(cleaned);
+  return cents == null ? null : (cents / 100).toFixed(2);
+}
+
 function dateValue(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -199,14 +218,17 @@ function layout(title, body) {
     th, td { padding:12px; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; }
     th { color:var(--navy); background:#f8fbff; }
     form { padding:18px; display:grid; gap:12px; }
+    form.work-order-form { padding:0; background:transparent; border:0; box-shadow:none; }
     label { display:grid; gap:6px; font-weight:800; color:var(--navy); }
     input, select, textarea { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:8px; font:inherit; }
     textarea { min-height:110px; }
     button, .button { display:inline-flex; align-items:center; justify-content:center; width:max-content; min-height:40px; padding:9px 14px; color:white; background:var(--blue); border:0; border-radius:8px; font-weight:900; text-decoration:none; cursor:pointer; }
     .muted { color:#5d6b7f; }
     .row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+    .row form { padding:0; background:transparent; border:0; box-shadow:none; }
     .service-chip { min-height:34px; padding:7px 10px; color:var(--navy); background:#eef8ee; border:1px solid rgba(53,181,31,.28); }
     .quick-add-panel { border-top:4px solid var(--green); }
+    .copy-source { position:absolute; left:-9999px; width:1px; height:1px; }
     .danger { color:#b42318; }
     @media (max-width: 850px) { .grid, .grid.two { grid-template-columns:1fr; } table { display:block; overflow-x:auto; } header { align-items:flex-start; flex-direction:column; } }
   </style>
@@ -321,15 +343,18 @@ function customerTable(customers) {
 }
 
 function ticketTable(tickets) {
-  return `<table><thead><tr><th>Ticket</th><th>Title</th><th>Status</th><th>Review</th><th>Appointment</th><th>Updated</th></tr></thead><tbody>${tickets.map((ticket) => `
+  return `<table><thead><tr><th>Ticket</th><th>Title</th><th>Status</th><th>Work Done</th><th>Completed</th><th>Invoices</th><th>Review</th><th>Appointment</th><th>Updated</th></tr></thead><tbody>${tickets.map((ticket) => `
     <tr>
       <td><a href="/desk/tickets/${ticket.id}">${esc(ticket.ticketNumber)}</a></td>
       <td>${esc(ticket.title)}<br><span class="muted">${esc(ticket.serviceType || "")}</span></td>
       <td>${esc(ticket.status)}</td>
+      <td>${ticket.workPerformed ? "Yes" : "No"}</td>
+      <td>${displayDate(ticket.completedAt)}</td>
+      <td>${ticket.invoices?.length ? `<a href="/desk/invoices/${ticket.invoices[0].id}">${ticket.invoices.length}</a>` : "0"}</td>
       <td>${reviewStatusLabel(ticket)}</td>
       <td>${ticket.appointmentAt ? new Date(ticket.appointmentAt).toLocaleString() : ""}</td>
       <td>${new Date(ticket.updatedAt).toLocaleDateString()}</td>
-    </tr>`).join("") || `<tr><td colspan="6">No tickets found.</td></tr>`}</tbody></table>`;
+    </tr>`).join("") || `<tr><td colspan="9">No tickets found.</td></tr>`}</tbody></table>`;
 }
 
 function reviewStatusLabel(ticket) {
@@ -369,17 +394,18 @@ function invoiceFinancialSummary(invoices) {
 }
 
 function customerTicketHistoryTable(tickets) {
-  return `<table><thead><tr><th>Ticket</th><th>Title</th><th>Service</th><th>Status</th><th>Appointment</th><th>Review Requested</th><th>Review Received</th><th>Created</th></tr></thead><tbody>${tickets.map((ticket) => `
+  return `<table><thead><tr><th>Ticket</th><th>Title</th><th>Service</th><th>Status</th><th>Appointment</th><th>Completed</th><th>Review Requested</th><th>Review Received</th><th>Created</th></tr></thead><tbody>${tickets.map((ticket) => `
     <tr>
       <td><a href="/desk/tickets/${ticket.id}">${esc(ticket.ticketNumber)}</a></td>
       <td>${esc(ticket.title)}</td>
       <td>${esc(ticket.serviceType || "")}</td>
       <td>${esc(ticket.status)}</td>
       <td>${displayDateTime(ticket.appointmentAt)}</td>
+      <td>${displayDate(ticket.completedAt)}</td>
       <td>${ticket.reviewRequested ? "Yes" : "No"}</td>
       <td>${ticket.reviewReceived ? "Yes" : "No"}</td>
       <td>${displayDate(ticket.createdAt)}</td>
-    </tr>`).join("") || `<tr><td colspan="8">No tickets yet.</td></tr>`}</tbody></table>`;
+    </tr>`).join("") || `<tr><td colspan="9">No tickets yet.</td></tr>`}</tbody></table>`;
 }
 
 function customerInvoiceHistoryTable(invoices) {
@@ -420,6 +446,204 @@ function customerRecentActivity(tickets, invoices) {
     </tr>`).join("") || `<tr><td colspan="3">No recent activity yet.</td></tr>`}</tbody></table>`;
 }
 
+function ticketContactName(ticket) {
+  return ticket.customer?.name || ticket.lead?.name || "Customer";
+}
+
+function ticketContactBlock(ticket) {
+  const contact = ticket.customer || ticket.lead;
+  if (!contact) return "No customer or lead linked.";
+  const href = ticket.customer ? `/desk/customers/${ticket.customer.id}` : `/desk/leads/${ticket.lead.id}`;
+  const detail = [contact.businessName, contact.phone, contact.email].filter(Boolean).join(" | ");
+  return `<a href="${href}">${esc(contact.name)}</a>${detail ? `<br><span class="muted">${esc(detail)}</span>` : ""}`;
+}
+
+function partsSummary(ticket) {
+  return ticket.partsUsed || ticket.partsNeeded || "None listed";
+}
+
+function finalPriceLabel(ticket) {
+  return ticket.finalPrice != null ? formatMoneyValue(ticket.finalPrice) : "Not set";
+}
+
+function ticketCompletionText(ticket) {
+  return `Hi, this is 909 Signal IT. Your service has been completed.
+
+Issue: ${ticket.issue || "Not listed"}
+Work performed: ${ticket.workPerformed || "Completed service work"}
+Final amount: ${finalPriceLabel(ticket)}
+
+Thank you for choosing 909 Signal IT.`;
+}
+
+function ticketCompletionEmail(ticket) {
+  return `Hello ${ticketContactName(ticket)},
+
+Your 909 Signal IT service has been completed.
+
+Ticket: ${ticket.ticketNumber}
+Service: ${ticket.serviceType || ticket.title || "IT Support"}
+Issue reported:
+${ticket.issue || "Not listed"}
+
+Diagnosis:
+${ticket.diagnosis || "Not listed"}
+
+Work performed:
+${ticket.workPerformed || "Completed service work"}
+
+Parts / materials:
+${partsSummary(ticket)}
+
+Recommended next steps:
+${ticket.recommendedNextSteps || "None listed"}
+
+Final amount:
+${finalPriceLabel(ticket)}
+
+Thank you for choosing 909 Signal IT.
+
+909 Signal IT
+909-260-8660
+support@909signalit.com`;
+}
+
+function copyButton(label, targetId) {
+  return `<button class="button copy-button" type="button" data-copy-target="${targetId}">${esc(label)}</button>`;
+}
+
+function copyScript() {
+  return `<script>
+    document.querySelectorAll("[data-copy-target]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const target = document.getElementById(button.dataset.copyTarget);
+        if (!target) return;
+        const text = target.value || target.textContent || "";
+        try {
+          await navigator.clipboard.writeText(text);
+          const original = button.textContent;
+          button.textContent = "Copied.";
+          setTimeout(() => { button.textContent = original; }, 1600);
+        } catch (error) {
+          target.focus();
+          if (target.select) target.select();
+        }
+      });
+    });
+  </script>`;
+}
+
+function completionSummaryPanel(ticket) {
+  const shouldShow = ["Completed", "Closed"].includes(ticket.status) || ticket.workPerformed || ticket.customerNotes || ticket.finalPrice != null;
+  if (!shouldShow) return "";
+  const textMessage = ticketCompletionText(ticket);
+  const emailSubject = `909 Signal IT Service Completed - Ticket ${ticket.ticketNumber}`;
+  const emailBody = ticketCompletionEmail(ticket);
+  return `<section class="card">
+    <h2>Completion Summary</h2>
+    <p><strong>Issue reported:</strong><br>${esc(ticket.issue || "Not listed")}</p>
+    <p><strong>Diagnosis:</strong><br>${esc(ticket.diagnosis || "Not listed")}</p>
+    <p><strong>Work performed:</strong><br>${esc(ticket.workPerformed || "Not listed")}</p>
+    <p><strong>Parts used/needed:</strong><br>${esc(partsSummary(ticket))}</p>
+    <p><strong>Final price:</strong> ${esc(finalPriceLabel(ticket))}</p>
+    <p><strong>Recommended next steps:</strong><br>${esc(ticket.recommendedNextSteps || "None listed")}</p>
+    <p>Thank you for choosing 909 Signal IT.</p>
+    <div class="row">
+      ${copyButton("Copy Completion Text", "completion-text")}
+      ${copyButton("Copy Completion Email", "completion-email")}
+      ${copyButton("Copy Customer Notes", "customer-notes-copy")}
+    </div>
+    <label>Text Message <textarea id="completion-text" readonly>${esc(textMessage)}</textarea></label>
+    <label>Email Subject <input id="completion-subject" value="${esc(emailSubject)}" readonly></label>
+    <label>Email Body <textarea id="completion-email" readonly>${esc(emailBody)}</textarea></label>
+    <textarea id="customer-notes-copy" class="copy-source" readonly>${esc(ticket.customerNotes || "")}</textarea>
+  </section>${copyScript()}`;
+}
+
+function ticketWorkOrderPage(ticket) {
+  const customerLabel = ticketContactBlock(ticket);
+  const linkedInvoices = ticket.invoices?.length
+    ? ticket.invoices.map((invoice) => `<a href="/desk/invoices/${invoice.id}">${esc(invoice.invoiceNumber)}</a> (${esc(invoice.status)}, ${dollars(invoice.totalCents)})`).join("<br>")
+    : `<span class="muted">No invoices linked yet.</span>`;
+  const requestReview = ["Completed", "Closed"].includes(ticket.status)
+    ? ticketReviewRequestSection(ticket)
+    : `<section class="card"><h2>Review Follow-Up</h2><p class="muted">Mark the work order completed before requesting a review.</p></section>`;
+  return `<section class="card">
+      <div class="row">
+        <h1>${esc(ticket.ticketNumber)}</h1>
+        <form method="post" action="/desk/tickets/${ticket.id}/status"><input type="hidden" name="status" value="Scheduled"><button>Mark Scheduled</button></form>
+        <form method="post" action="/desk/tickets/${ticket.id}/status"><input type="hidden" name="status" value="In Progress"><button>Mark In Progress</button></form>
+        <form method="post" action="/desk/tickets/${ticket.id}/complete"><button>Mark Completed</button></form>
+        <a class="button" href="/desk/invoices/new?ticketId=${ticket.id}">Create Invoice</a>
+        <a class="button" href="/desk/tickets">Back to Tickets</a>
+      </div>
+      <div class="grid two">
+        <p><strong>Customer/lead:</strong><br>${customerLabel}</p>
+        <p><strong>Service type:</strong><br>${esc(ticket.serviceType || "")}</p>
+        <p><strong>Status:</strong><br>${esc(ticket.status)}</p>
+        <p><strong>Appointment:</strong><br>${displayDateTime(ticket.appointmentAt)}</p>
+        <p><strong>Created:</strong><br>${displayDateTime(ticket.createdAt)}</p>
+        <p><strong>Updated:</strong><br>${displayDateTime(ticket.updatedAt)}</p>
+        <p><strong>Completed:</strong><br>${displayDateTime(ticket.completedAt)}</p>
+        <p><strong>Linked invoices:</strong><br>${linkedInvoices}</p>
+      </div>
+    </section>
+    <form class="work-order-form" method="post" action="/desk/tickets/${ticket.id}/update">
+      <h2>Work Order</h2>
+      <section class="card">
+        <h3>Ticket Summary</h3>
+        <label>Title <input name="title" value="${esc(ticket.title)}"></label>
+        <label>Service type <select name="serviceType"><option value="">Select one</option>${statusOptions(serviceTypes, ticket.serviceType)}</select></label>
+        <label>Status <select name="status">${statusOptions(ticketStatuses, ticket.status)}</select></label>
+        <label>Appointment <input name="appointmentAt" type="datetime-local" value="${dateValue(ticket.appointmentAt)}"></label>
+      </section>
+      <section class="card">
+        <h3>Reported Issue</h3>
+        <label>Issue <textarea name="issue">${esc(ticket.issue || "")}</textarea></label>
+      </section>
+      <section class="card">
+        <h3>Diagnosis</h3>
+        <label>Diagnosis <textarea name="diagnosis">${esc(ticket.diagnosis || "")}</textarea></label>
+      </section>
+      <section class="card">
+        <h3>Work Performed</h3>
+        <label>Work performed <textarea name="workPerformed">${esc(ticket.workPerformed || "")}</textarea></label>
+      </section>
+      <section class="card">
+        <h3>Parts / Materials</h3>
+        <label>Parts needed <textarea name="partsNeeded">${esc(ticket.partsNeeded || "")}</textarea></label>
+        <label>Parts used <textarea name="partsUsed">${esc(ticket.partsUsed || "")}</textarea></label>
+      </section>
+      <section class="card">
+        <h3>Time / Pricing</h3>
+        <label>Time spent minutes <input name="timeSpentMinutes" type="number" min="0" step="1" value="${esc(ticket.timeSpentMinutes ?? "")}"></label>
+        <label>Price quoted <input name="priceQuoted" value="${money(ticket.priceQuoted)}"></label>
+        <label>Final price <input name="finalPrice" value="${money(ticket.finalPrice)}"></label>
+      </section>
+      <section class="card">
+        <h3>Customer-Facing Notes</h3>
+        <label>Customer notes <textarea name="customerNotes">${esc(ticket.customerNotes || "")}</textarea></label>
+      </section>
+      <section class="card">
+        <h3>Internal Notes</h3>
+        <p class="muted">Internal only. Do not send these notes to customers.</p>
+        <label>Internal notes <textarea name="internalNotes">${esc(ticket.internalNotes || "")}</textarea></label>
+      </section>
+      <section class="card">
+        <h3>Recommended Next Steps</h3>
+        <label>Recommended next steps <textarea name="recommendedNextSteps">${esc(ticket.recommendedNextSteps || "")}</textarea></label>
+      </section>
+      <section class="card">
+        <h3>Review Status</h3>
+        <label><input type="checkbox" name="reviewRequested" ${ticket.reviewRequested ? "checked" : ""}> Review requested</label>
+        <label><input type="checkbox" name="reviewReceived" ${ticket.reviewReceived ? "checked" : ""}> Review received</label>
+      </section>
+      <button>Save Work Order</button>
+    </form>
+    ${completionSummaryPanel(ticket)}
+    ${requestReview}`;
+}
+
 function invoiceForm(action, values = {}, message = "") {
   const itemCount = Math.max(3, values.descriptions?.length || 0);
   const rows = Array.from({ length: itemCount }, (_, index) => `
@@ -434,6 +658,7 @@ function invoiceForm(action, values = {}, message = "") {
     <h1>New Invoice</h1>
     ${message}
     <input type="hidden" name="customerId" value="${fieldValue(values, "customerId")}">
+    <input type="hidden" name="ticketId" value="${fieldValue(values, "ticketId")}">
     <p class="muted">Estimate terms: This estimate is based on the information currently available and may change if additional issues, parts, labor, access problems, or customer-requested work are discovered. Estimate valid for 7 days unless otherwise stated. Client is responsible for backing up important data before service begins.</p>
     <section class="grid two">
       <label>Customer name <input name="customerName" value="${fieldValue(values, "customerName")}" required></label>
@@ -962,7 +1187,7 @@ app.get("/desk/tickets", requireAuth, async (request, response) => {
   const q = String(request.query.q || "");
   const status = String(request.query.status || "");
   const where = { AND: [status ? { status } : {}, searchWhere(q, ["ticketNumber", "title", "serviceType", "issue", "diagnosis", "workPerformed"]) || {}] };
-  const tickets = await prisma.ticket.findMany({ where, orderBy: { updatedAt: "desc" } });
+  const tickets = await prisma.ticket.findMany({ where, include: { invoices: true }, orderBy: { updatedAt: "desc" } });
   response.send(layout("Tickets", `<section class="card"><h1>Tickets</h1><form method="get" class="row"><input name="q" value="${esc(q)}" placeholder="Search tickets"><select name="status"><option value="">All statuses</option>${statusOptions(ticketStatuses, status)}</select><button>Filter</button></form></section>${ticketTable(tickets)}`));
 });
 
@@ -1011,12 +1236,28 @@ app.get("/desk/service-menu", requireAuth, (request, response) => {
 
 app.get("/desk/invoices/new", requireAuth, async (request, response) => {
   const customerId = Number(request.query.customerId);
-  const customer = Number.isInteger(customerId) && customerId > 0 ? await prisma.customer.findUnique({ where: { id: customerId } }) : null;
-  response.send(layout("New Invoice", invoiceForm("/desk/invoices", {
+  const ticketId = Number(request.query.ticketId);
+  const ticket = Number.isInteger(ticketId) && ticketId > 0
+    ? await prisma.ticket.findUnique({ where: { id: ticketId }, include: { customer: true, lead: true } })
+    : null;
+  const customer = ticket?.customer || (Number.isInteger(customerId) && customerId > 0 ? await prisma.customer.findUnique({ where: { id: customerId } }) : null);
+  const lead = ticket?.lead || null;
+  const priceCents = ticket ? parseMoneyToCents(ticket.finalPrice ?? "") : 0;
+  const invoiceValues = {
+    ticketId: ticket?.id || "",
     customerId: customer?.id || "",
-    customerName: customer?.name || "",
-    customerEmail: customer?.email || "",
-    customerPhone: customer?.phone || ""
+    customerName: customer?.name || lead?.name || "",
+    customerEmail: customer?.email || lead?.email || "",
+    customerPhone: customer?.phone || lead?.phone || ""
+  };
+  if (ticket) {
+    invoiceValues.notes = ticket.customerNotes || "";
+    invoiceValues.descriptions = [ticket.workPerformed || ticket.serviceType || ticket.title || "IT Support"];
+    invoiceValues.quantities = ["1"];
+    invoiceValues.unitPrices = [priceCents ? centsToInputValue(priceCents) : ""];
+  }
+  response.send(layout("New Invoice", invoiceForm("/desk/invoices", {
+    ...invoiceValues
   })));
 });
 
@@ -1024,6 +1265,7 @@ app.post("/desk/invoices", requireAuth, async (request, response) => {
   const body = request.body;
   const values = {
     customerId: body.customerId,
+    ticketId: body.ticketId,
     customerName: body.customerName,
     customerEmail: body.customerEmail,
     customerPhone: body.customerPhone,
@@ -1049,10 +1291,14 @@ app.post("/desk/invoices", requireAuth, async (request, response) => {
 
   const customerId = Number(body.customerId);
   const customer = Number.isInteger(customerId) && customerId > 0 ? await prisma.customer.findUnique({ where: { id: customerId } }) : null;
+  const ticketId = Number(body.ticketId);
+  const ticket = Number.isInteger(ticketId) && ticketId > 0 ? await prisma.ticket.findUnique({ where: { id: ticketId } }) : null;
   const invoice = await prisma.invoice.create({
     data: {
       invoiceNumber: await nextInvoiceNumber(),
-      customerId: customer?.id || null,
+      customerId: customer?.id || ticket?.customerId || null,
+      leadId: ticket?.leadId || null,
+      ticketId: ticket?.id || null,
       customerName: body.customerName.trim(),
       customerEmail: body.customerEmail?.trim() || null,
       customerPhone: body.customerPhone?.trim() || null,
@@ -1196,7 +1442,7 @@ app.post("/desk/tickets/:id/create-invoice", requireAuth, async (request, respon
       status: "Draft",
       lineItems: {
         create: [{
-          description: ticket.serviceType || ticket.title || "IT Support",
+          description: ticket.workPerformed || ticket.serviceType || ticket.title || "IT Support",
           quantity: 1,
           unitPriceCents: priceCents,
           lineTotalCents: priceCents
@@ -1208,40 +1454,51 @@ app.post("/desk/tickets/:id/create-invoice", requireAuth, async (request, respon
 });
 
 app.get("/desk/tickets/:id", requireAuth, async (request, response) => {
-  const ticket = await prisma.ticket.findUnique({ where: { id: Number(request.params.id) }, include: { customer: true, lead: true } });
+  const ticket = await prisma.ticket.findUnique({ where: { id: Number(request.params.id) }, include: { customer: true, lead: true, invoices: true } });
   if (!ticket) return response.status(404).send(layout("Ticket not found", "<section class='card'>Ticket not found.</section>"));
-  response.send(layout(ticket.ticketNumber, `<section class="card row"><form method="post" action="/desk/tickets/${ticket.id}/create-invoice"><button>Create Invoice</button></form></section><form method="post" action="/desk/tickets/${ticket.id}/update">
-    <h1>${esc(ticket.ticketNumber)}</h1>
-    <label>Title <input name="title" value="${esc(ticket.title)}"></label>
-    <label>Status <select name="status">${statusOptions(ticketStatuses, ticket.status)}</select></label>
-    <label>Appointment <input name="appointmentAt" type="datetime-local" value="${dateValue(ticket.appointmentAt)}"></label>
-    <label>Diagnosis <textarea name="diagnosis">${esc(ticket.diagnosis || "")}</textarea></label>
-    <label>Work Performed <textarea name="workPerformed">${esc(ticket.workPerformed || "")}</textarea></label>
-    <label>Price Quoted <input name="priceQuoted" value="${money(ticket.priceQuoted)}"></label>
-    <label>Final Price <input name="finalPrice" value="${money(ticket.finalPrice)}"></label>
-    <label>Internal Notes <textarea name="internalNotes">${esc(ticket.internalNotes || "")}</textarea></label>
-    <label>Customer Notes <textarea name="customerNotes">${esc(ticket.customerNotes || "")}</textarea></label>
-    <label><input type="checkbox" name="reviewRequested" ${ticket.reviewRequested ? "checked" : ""}> Review requested</label>
-    <label><input type="checkbox" name="reviewReceived" ${ticket.reviewReceived ? "checked" : ""}> Review received</label>
-    <button>Save Ticket</button>
-  </form>${ticketReviewRequestSection(ticket)}`));
+  response.send(layout(ticket.ticketNumber, ticketWorkOrderPage(ticket)));
 });
 
 app.post("/desk/tickets/:id/update", requireAuth, async (request, response) => {
+  const existing = await prisma.ticket.findUnique({ where: { id: Number(request.params.id) } });
+  if (!existing) return response.redirect("/desk/tickets");
+  const status = ticketStatuses.includes(request.body.status) ? request.body.status : "New";
+  const completedAt = ["Completed", "Closed"].includes(status) && !existing.completedAt ? new Date() : null;
   const data = {
     title: request.body.title || "Service Ticket",
-    status: request.body.status,
+    serviceType: request.body.serviceType || null,
+    status,
     appointmentAt: request.body.appointmentAt ? new Date(request.body.appointmentAt) : null,
+    issue: request.body.issue || null,
     diagnosis: request.body.diagnosis || null,
     workPerformed: request.body.workPerformed || null,
-    priceQuoted: request.body.priceQuoted || null,
-    finalPrice: request.body.finalPrice || null,
+    partsNeeded: request.body.partsNeeded || null,
+    partsUsed: request.body.partsUsed || null,
+    timeSpentMinutes: parseOptionalMinutes(request.body.timeSpentMinutes),
+    priceQuoted: parseOptionalMoneyDecimal(request.body.priceQuoted),
+    finalPrice: parseOptionalMoneyDecimal(request.body.finalPrice),
     internalNotes: request.body.internalNotes || null,
     customerNotes: request.body.customerNotes || null,
+    recommendedNextSteps: request.body.recommendedNextSteps || null,
     reviewRequested: Boolean(request.body.reviewRequested),
-    reviewReceived: Boolean(request.body.reviewReceived)
+    reviewReceived: Boolean(request.body.reviewReceived),
+    ...(completedAt ? { completedAt } : {})
   };
   await prisma.ticket.update({ where: { id: Number(request.params.id) }, data });
+  response.redirect(`/desk/tickets/${request.params.id}`);
+});
+
+app.post("/desk/tickets/:id/status", requireAuth, async (request, response) => {
+  const status = ticketStatuses.includes(request.body.status) ? request.body.status : "New";
+  await prisma.ticket.update({ where: { id: Number(request.params.id) }, data: { status } });
+  response.redirect(`/desk/tickets/${request.params.id}`);
+});
+
+app.post("/desk/tickets/:id/complete", requireAuth, async (request, response) => {
+  await prisma.ticket.update({
+    where: { id: Number(request.params.id) },
+    data: { status: "Completed", completedAt: new Date() }
+  });
   response.redirect(`/desk/tickets/${request.params.id}`);
 });
 

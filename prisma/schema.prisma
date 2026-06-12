@@ -8,7 +8,7 @@ datasource db {
 }
 
 model Lead {
-  id               Int      @id @default(autoincrement())
+  id               Int       @id @default(autoincrement())
   name             String
   phone            String
   email            String?
@@ -19,17 +19,17 @@ model Lead {
   urgency          String
   preferredContact String
   message          String
-  source           String   @default("Website")
-  status           String   @default("New Lead")
+  source           String    @default("Website")
+  status           String    @default("New Lead")
   notes            String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
   tickets          Ticket[]
   invoices         Invoice[]
 }
 
 model Customer {
-  id           Int      @id @default(autoincrement())
+  id           Int       @id @default(autoincrement())
   name         String
   phone        String?
   email        String?
@@ -38,36 +38,40 @@ model Customer {
   address      String?
   city         String?
   notes        String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
   tickets      Ticket[]
   invoices     Invoice[]
 }
 
 model Ticket {
-  id              Int       @id @default(autoincrement())
-  ticketNumber    String    @unique
-  customerId      Int?
-  leadId          Int?
-  title           String
-  serviceType     String?
-  issue           String?
-  diagnosis       String?
-  workPerformed   String?
-  partsNeeded     String?
-  priceQuoted     Decimal?
-  finalPrice      Decimal?
-  appointmentAt   DateTime?
-  status          String    @default("New")
-  internalNotes   String?
-  customerNotes   String?
-  reviewRequested Boolean   @default(false)
-  reviewReceived  Boolean   @default(false)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  customer        Customer? @relation(fields: [customerId], references: [id])
-  lead            Lead?     @relation(fields: [leadId], references: [id])
-  invoices        Invoice[]
+  id                   Int       @id @default(autoincrement())
+  ticketNumber         String    @unique
+  customerId           Int?
+  leadId               Int?
+  title                String
+  serviceType          String?
+  issue                String?
+  diagnosis            String?
+  workPerformed        String?
+  partsNeeded          String?
+  partsUsed            String?
+  priceQuoted          Decimal?
+  finalPrice           Decimal?
+  timeSpentMinutes     Int?
+  appointmentAt        DateTime?
+  status               String    @default("New")
+  internalNotes        String?
+  customerNotes        String?
+  recommendedNextSteps String?
+  completedAt          DateTime?
+  reviewRequested      Boolean   @default(false)
+  reviewReceived       Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  customer             Customer? @relation(fields: [customerId], references: [id])
+  lead                 Lead?     @relation(fields: [leadId], references: [id])
+  invoices             Invoice[]
 }
 
 model Invoice {
