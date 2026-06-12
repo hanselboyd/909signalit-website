@@ -206,10 +206,28 @@ function lastThirtyDaysStart() {
   return start;
 }
 
+function tomorrowStart() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  start.setDate(start.getDate() + 1);
+  return start;
+}
+
+function daysAgoStart(days) {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  start.setDate(start.getDate() - days);
+  return start;
+}
+
 function currentMonthRange() {
   const start = nowMonthStart();
   const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
   return { start, end, value: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}` };
+}
+
+function parseFollowUpDate(value) {
+  return value ? new Date(`${value}T12:00:00`) : null;
 }
 
 function monthRangeFromParam(value) {
@@ -294,6 +312,7 @@ function layout(title, body) {
       <a href="/desk/invoices">Invoices</a>
       <a href="/desk/expenses">Expenses</a>
       <a href="/desk/reports">Reports</a>
+      <a href="/desk/follow-ups">Follow-Ups</a>
       <a href="/desk/service-menu">Service Menu</a>
       <a href="/desk/logout">Logout</a>
     </nav>
@@ -603,6 +622,98 @@ function monthlyReportRows(report) {
   ];
 }
 
+function followUpForm(title, action, values = {}, extra = "") {
+  return `<form method="post" action="${esc(action)}">
+    <h2>${esc(title)}</h2>
+    <label>Follow-up date <input name="followUpAt" type="date" value="${dateOnlyValue(values.followUpAt)}"></label>
+    <label>Follow-up note <textarea name="followUpNote">${esc(values.followUpNote || "")}</textarea></label>
+    <button>Save Follow-Up</button>
+    ${extra}
+  </form>`;
+}
+
+function leadFollowUpText(lead) {
+  return `Hi ${lead.name}, this is 909 Signal IT following up on your request for ${lead.serviceRequested}. Do you still need help? You can reply here or call/text 909-260-8660.`;
+}
+
+function invoiceFollowUpText(invoice) {
+  const name = invoice.customerName || "there";
+  const paymentLink = invoice.paymentLink || "[payment link not generated yet]";
+  return `Hi ${name}, this is 909 Signal IT following up on invoice ${invoice.invoiceNumber}. Here is the secure payment link: ${paymentLink}. Thank you.`;
+}
+
+function reviewFollowUpText(ticket) {
+  const name = ticket.customer?.name || ticket.lead?.name || "there";
+  const reviewLink = googleReviewLink || "[Google review link not configured]";
+  return `Hi ${name}, this is 909 Signal IT. Thank you again for choosing us. If the service was helpful, would you mind leaving a quick Google review? ${reviewLink}`;
+}
+
+function copyInlineButton(id, text, label = "Copy Message") {
+  return `<textarea class="copy-source" id="${esc(id)}" readonly>${esc(text)}</textarea><button class="button" type="button" data-copy-target="${esc(id)}">${esc(label)}</button>`;
+}
+
+function leadFollowUpTable(leads) {
+  return `<table><thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Service</th><th>City</th><th>Created</th><th>Follow-up</th><th>Note</th><th></th></tr></thead><tbody>${leads.map((lead) => `
+    <tr>
+      <td><a href="/desk/leads/${lead.id}">${esc(lead.name)}</a></td>
+      <td>${esc(lead.phone)}</td>
+      <td>${esc(lead.email || "")}</td>
+      <td>${esc(lead.serviceRequested)}</td>
+      <td>${esc(lead.city)}</td>
+      <td>${displayDate(lead.createdAt)}</td>
+      <td>${displayDate(lead.followUpAt)}</td>
+      <td>${esc(lead.followUpNote || "")}</td>
+      <td>${copyInlineButton(`lead-follow-${lead.id}`, leadFollowUpText(lead))}</td>
+    </tr>`).join("") || `<tr><td colspan="9">No lead follow-ups due.</td></tr>`}</tbody></table>`;
+}
+
+function invoiceFollowUpTable(invoices) {
+  return `<table><thead><tr><th>Invoice</th><th>Customer</th><th>Total</th><th>Due</th><th>Status</th><th>Follow-up</th><th></th></tr></thead><tbody>${invoices.map((invoice) => `
+    <tr>
+      <td><a href="/desk/invoices/${invoice.id}">${esc(invoice.invoiceNumber)}</a></td>
+      <td>${esc(invoice.customerName)}</td>
+      <td>${dollars(invoice.totalCents)}</td>
+      <td>${displayDate(invoice.dueDate)}</td>
+      <td>${esc(invoice.status)}</td>
+      <td>${displayDate(invoice.followUpAt)}</td>
+      <td>${copyInlineButton(`invoice-follow-${invoice.id}`, invoiceFollowUpText(invoice))}</td>
+    </tr>`).join("") || `<tr><td colspan="7">No invoice follow-ups due.</td></tr>`}</tbody></table>`;
+}
+
+function ticketFollowUpTable(tickets, emptyMessage = "No stale tickets.") {
+  return `<table><thead><tr><th>Ticket</th><th>Customer</th><th>Service</th><th>Status</th><th>Last Updated</th><th>Follow-up</th></tr></thead><tbody>${tickets.map((ticket) => `
+    <tr>
+      <td><a href="/desk/tickets/${ticket.id}">${esc(ticket.ticketNumber)}</a></td>
+      <td>${esc(ticket.customer?.name || ticket.lead?.name || "")}</td>
+      <td>${esc(ticket.serviceType || "")}</td>
+      <td>${esc(ticket.status)}</td>
+      <td>${displayDate(ticket.updatedAt)}</td>
+      <td>${displayDate(ticket.followUpAt)}</td>
+    </tr>`).join("") || `<tr><td colspan="6">${esc(emptyMessage)}</td></tr>`}</tbody></table>`;
+}
+
+function reviewFollowUpTable(tickets) {
+  return `<table><thead><tr><th>Ticket</th><th>Customer</th><th>Completed</th><th>Review Requested</th><th></th></tr></thead><tbody>${tickets.map((ticket) => `
+    <tr>
+      <td><a href="/desk/tickets/${ticket.id}">${esc(ticket.ticketNumber)}</a></td>
+      <td>${esc(ticket.customer?.name || ticket.lead?.name || "")}</td>
+      <td>${displayDate(ticket.completedAt)}</td>
+      <td>${ticket.reviewRequested ? "Yes" : "No"}</td>
+      <td>${copyInlineButton(`review-follow-${ticket.id}`, reviewFollowUpText(ticket))}</td>
+    </tr>`).join("") || `<tr><td colspan="5">No review follow-ups due.</td></tr>`}</tbody></table>`;
+}
+
+function customerFollowUpTable(customers) {
+  return `<table><thead><tr><th>Customer</th><th>Phone</th><th>Email</th><th>Follow-up</th><th>Note</th></tr></thead><tbody>${customers.map((customer) => `
+    <tr>
+      <td><a href="/desk/customers/${customer.id}">${esc(customer.name)}</a></td>
+      <td>${esc(customer.phone || "")}</td>
+      <td>${esc(customer.email || "")}</td>
+      <td>${displayDate(customer.followUpAt)}</td>
+      <td>${esc(customer.followUpNote || "")}</td>
+    </tr>`).join("") || `<tr><td colspan="5">No customer follow-ups due.</td></tr>`}</tbody></table>`;
+}
+
 function expenseLinkSummary(expense) {
   const links = [];
   if (expense.customer) links.push(`<a href="/desk/customers/${expense.customer.id}">${esc(expense.customer.name)}</a>`);
@@ -893,6 +1004,7 @@ function ticketWorkOrderPage(ticket) {
       </section>
       <button>Save Work Order</button>
     </form>
+    ${followUpForm("Ticket Follow-Up", `/desk/tickets/${ticket.id}/follow-up`, ticket)}
     <section class="card"><h2>Related Expenses</h2>${compactExpenseTable(ticketExpenses, "No expenses connected to this ticket yet.")}</section>
     ${completionSummaryPanel(ticket)}
     ${requestReview}`;
@@ -1285,9 +1397,26 @@ app.get("/desk", requireAuth, async (request, response) => {
   const today = todayRange();
   const weekStart = lastSevenDaysStart();
   const thirtyDaysStart = lastThirtyDaysStart();
+  const dueBefore = tomorrowStart();
+  const staleBefore = daysAgoStart(3);
   const month = currentMonthRange();
   const completedStatus = { status: { in: ["Completed", "Closed"] } };
   const needsReviewWhere = { ...completedStatus, reviewRequested: false, reviewReceived: false };
+  const leadFollowUpWhere = {
+    status: { notIn: ["Completed", "Closed", "Lost"] },
+    OR: [{ lastContactedAt: null }, { followUpAt: { lt: dueBefore } }]
+  };
+  const invoiceFollowUpWhere = { status: { in: ["Sent", "Partially Paid", "Overdue"] }, paidAt: null, OR: [{ followUpAt: null }, { followUpAt: { lt: dueBefore } }] };
+  const ticketFollowUpWhere = {
+    status: { in: ["New", "Scheduled", "In Progress", "Waiting on Customer"] },
+    OR: [{ updatedAt: { lt: staleBefore } }, { followUpAt: { lt: dueBefore } }]
+  };
+  const reviewFollowUpWhere = {
+    status: { in: ["Completed", "Closed"] },
+    reviewRequested: true,
+    reviewReceived: false,
+    OR: [{ updatedAt: { lt: staleBefore } }, { followUpAt: { lt: dueBefore } }]
+  };
   const openInvoiceStatuses = ["Draft", "Sent", "Partially Paid", "Overdue"];
   const sentUnpaidStatuses = ["Sent", "Partially Paid", "Overdue"];
   const nonVoidInvoiceWhere = { status: { notIn: ["Void", "Refunded"] } };
@@ -1313,6 +1442,10 @@ app.get("/desk", requireAuth, async (request, response) => {
     averageInvoiceTotal,
     reviewRequestsSent,
     reviewsReceived,
+    leadsNeedingContact,
+    invoiceFollowUps,
+    ticketFollowUps,
+    reviewFollowUps,
     recentLeads,
     recentTickets,
     recentInvoices
@@ -1337,6 +1470,10 @@ app.get("/desk", requireAuth, async (request, response) => {
     prisma.invoice.aggregate({ where: nonVoidInvoiceWhere, _avg: { totalCents: true } }),
     prisma.ticket.count({ where: { reviewRequested: true, reviewReceived: false } }),
     prisma.ticket.count({ where: { reviewReceived: true } }),
+    prisma.lead.count({ where: leadFollowUpWhere }),
+    prisma.invoice.count({ where: invoiceFollowUpWhere }),
+    prisma.ticket.count({ where: ticketFollowUpWhere }),
+    prisma.ticket.count({ where: reviewFollowUpWhere }),
     prisma.lead.findMany({ orderBy: { createdAt: "desc" }, take: 12 }),
     prisma.ticket.findMany({ include: { customer: true, lead: true }, orderBy: { updatedAt: "desc" }, take: 20 }),
     prisma.invoice.findMany({ orderBy: { updatedAt: "desc" }, take: 20 })
@@ -1389,9 +1526,52 @@ app.get("/desk", requireAuth, async (request, response) => {
     ${attentionCard("Tickets needing invoice", ticketsNeedingInvoice, "/desk/tickets")}
     ${attentionCard("Tickets needing review request", ticketsNeedingReview, "/desk/tickets")}
     ${attentionCard("Sent/unpaid invoices", sentUnpaidInvoices, "/desk/invoices")}
+    ${attentionCard("Leads needing contact", leadsNeedingContact, "/desk/follow-ups")}
+    ${attentionCard("Invoice follow-ups", invoiceFollowUps, "/desk/follow-ups")}
+    ${attentionCard("Ticket follow-ups", ticketFollowUps, "/desk/follow-ups")}
+    ${attentionCard("Review follow-ups", reviewFollowUps, "/desk/follow-ups")}
   </div></section>
   <section class="card"><h2>Reports & Exports</h2><p class="muted">Download CSV records for bookkeeping, taxes, and backups.</p><a class="button" href="/desk/reports">Open Reports</a></section>
   <section class="card"><h2>Recent Activity</h2>${activityItems.length ? recentActivityTable(activityItems) : `<p class="muted">No recent activity yet.</p>`}</section>`));
+});
+
+app.get("/desk/follow-ups", requireAuth, async (request, response) => {
+  const dueBefore = tomorrowStart();
+  const staleBefore = daysAgoStart(3);
+  const [leads, invoices, tickets, reviewTickets, customers] = await Promise.all([
+    prisma.lead.findMany({
+      where: { status: { notIn: ["Completed", "Closed", "Lost"] }, OR: [{ lastContactedAt: null }, { followUpAt: { lt: dueBefore } }] },
+      orderBy: [{ followUpAt: "asc" }, { createdAt: "asc" }]
+    }),
+    prisma.invoice.findMany({
+      where: { status: { in: ["Sent", "Partially Paid", "Overdue"] }, paidAt: null, OR: [{ followUpAt: null }, { followUpAt: { lt: dueBefore } }] },
+      orderBy: [{ followUpAt: "asc" }, { dueDate: "asc" }]
+    }),
+    prisma.ticket.findMany({
+      where: { status: { in: ["New", "Scheduled", "In Progress", "Waiting on Customer"] }, OR: [{ updatedAt: { lt: staleBefore } }, { followUpAt: { lt: dueBefore } }] },
+      include: { customer: true, lead: true },
+      orderBy: [{ followUpAt: "asc" }, { updatedAt: "asc" }]
+    }),
+    prisma.ticket.findMany({
+      where: { status: { in: ["Completed", "Closed"] }, reviewRequested: true, reviewReceived: false, OR: [{ updatedAt: { lt: staleBefore } }, { followUpAt: { lt: dueBefore } }] },
+      include: { customer: true, lead: true },
+      orderBy: [{ followUpAt: "asc" }, { updatedAt: "asc" }]
+    }),
+    prisma.customer.findMany({
+      where: { followUpAt: { lt: dueBefore } },
+      orderBy: { followUpAt: "asc" }
+    })
+  ]);
+  response.send(layout("Follow-Ups", `<section class="card">
+    <h1>Follow-Ups</h1>
+    <p class="muted">Internal reminders only. No automatic emails or texts are sent.</p>
+  </section>
+  <section class="card"><h2>Leads Needing Contact</h2>${leadFollowUpTable(leads)}</section>
+  <section class="card"><h2>Unpaid Invoice Follow-Ups</h2>${invoiceFollowUpTable(invoices)}</section>
+  <section class="card"><h2>Ticket Follow-Ups</h2>${ticketFollowUpTable(tickets)}</section>
+  <section class="card"><h2>Review Follow-Ups</h2>${reviewFollowUpTable(reviewTickets)}</section>
+  <section class="card"><h2>Customer Follow-Ups</h2>${customerFollowUpTable(customers)}</section>
+  ${copyScript()}`));
 });
 
 app.get("/desk/reports", requireAuth, async (request, response) => {
@@ -1669,8 +1849,12 @@ app.get("/desk/leads/:id", requireAuth, async (request, response) => {
       <form method="post" action="/desk/leads/${lead.id}/update"><h2>Update Lead</h2><label>Status <select name="status">${statusOptions(leadStatuses, lead.status)}</select></label><label>Notes <textarea name="notes">${esc(lead.notes || "")}</textarea></label><button>Save Lead</button></form>
       <form method="post" action="/desk/leads/${lead.id}/note"><h2>Add Follow-Up Note</h2><label>Note <textarea name="note"></textarea></label><button>Add Note</button></form>
     </section>
+    <section class="grid two">
+      ${followUpForm("Follow-Up Reminder", `/desk/leads/${lead.id}/follow-up`, lead)}
+      <section class="card"><h2>Contact</h2><p><strong>Last contacted:</strong> ${displayDateTime(lead.lastContactedAt) || "Not recorded"}</p><div class="row"><form method="post" action="/desk/leads/${lead.id}/contacted"><button>Mark Contacted Now</button></form>${copyInlineButton(`lead-detail-follow-${lead.id}`, leadFollowUpText(lead))}</div></section>
+    </section>
     <section class="card row"><form method="post" action="/desk/leads/${lead.id}/customer"><button>Create Customer From Lead</button></form><form method="post" action="/desk/leads/${lead.id}/ticket"><button>Create Ticket From Lead</button></form></section>
-    <section class="card"><h2>Related Tickets</h2>${ticketTable(lead.tickets)}</section>`));
+    <section class="card"><h2>Related Tickets</h2>${ticketTable(lead.tickets)}</section>${copyScript()}`));
 });
 
 app.post("/desk/leads/:id/update", requireAuth, async (request, response) => {
@@ -1683,6 +1867,31 @@ app.post("/desk/leads/:id/note", requireAuth, async (request, response) => {
   const stamp = new Date().toLocaleString();
   await prisma.lead.update({ where: { id: Number(request.params.id) }, data: { notes: `${lead?.notes || ""}\n[${stamp}] ${request.body.note || ""}`.trim() } });
   response.redirect(`/desk/leads/${request.params.id}`);
+});
+
+app.post("/desk/leads/:id/follow-up", requireAuth, async (request, response) => {
+  await prisma.lead.update({
+    where: { id: Number(request.params.id) },
+    data: {
+      followUpAt: parseFollowUpDate(request.body.followUpAt),
+      followUpNote: request.body.followUpNote?.trim() || null
+    }
+  });
+  response.redirect(`/desk/leads/${request.params.id}`);
+});
+
+app.post("/desk/leads/:id/contacted", requireAuth, async (request, response) => {
+  const lead = await prisma.lead.findUnique({ where: { id: Number(request.params.id) } });
+  if (!lead) return response.redirect("/desk/leads");
+  await prisma.lead.update({
+    where: { id: lead.id },
+    data: {
+      lastContactedAt: new Date(),
+      followUpAt: null,
+      status: lead.status === "New Lead" && leadStatuses.includes("Contacted") ? "Contacted" : lead.status
+    }
+  });
+  response.redirect(`/desk/leads/${lead.id}`);
 });
 
 app.post("/desk/leads/:id/customer", requireAuth, async (request, response) => {
@@ -1737,6 +1946,7 @@ app.get("/desk/customers/:id", requireAuth, async (request, response) => {
       <div class="card metric"><span>Open invoices</span><strong>${summary.openCount}</strong></div>
     </section>
     <form method="post" action="/desk/customers/${customer.id}/update"><h2>Notes</h2><label>Notes <textarea name="notes">${esc(customer.notes || "")}</textarea></label><button>Save Notes</button></form>
+    ${followUpForm("Customer Follow-Up", `/desk/customers/${customer.id}/follow-up`, customer)}
     <section class="card"><h2>Related Tickets</h2>${customerTicketHistoryTable(customer.tickets)}</section>
     <section class="card"><h2>Related Invoices</h2>${customerInvoiceHistoryTable(customer.invoices)}</section>
     <section class="card"><h2>Related Expenses</h2>${compactExpenseTable(customer.expenses, "No expenses for this customer yet.")}</section>
@@ -1754,6 +1964,17 @@ app.get("/desk/customers/:id/summary", requireAuth, async (request, response) =>
 
 app.post("/desk/customers/:id/update", requireAuth, async (request, response) => {
   await prisma.customer.update({ where: { id: Number(request.params.id) }, data: { notes: request.body.notes || null } });
+  response.redirect(`/desk/customers/${request.params.id}`);
+});
+
+app.post("/desk/customers/:id/follow-up", requireAuth, async (request, response) => {
+  await prisma.customer.update({
+    where: { id: Number(request.params.id) },
+    data: {
+      followUpAt: parseFollowUpDate(request.body.followUpAt),
+      followUpNote: request.body.followUpNote?.trim() || null
+    }
+  });
   response.redirect(`/desk/customers/${request.params.id}`);
 });
 
@@ -1937,6 +2158,10 @@ app.get("/desk/invoices/:id", requireAuth, async (request, response) => {
       </form>
     </section>
     ${invoicePaymentMessages(invoice)}
+    <section class="grid two">
+      ${followUpForm("Invoice Follow-Up", `/desk/invoices/${invoice.id}/follow-up`, invoice)}
+      <section class="card"><h2>Follow-Up Message</h2><div class="row">${copyInlineButton(`invoice-detail-follow-${invoice.id}`, invoiceFollowUpText(invoice))}</div></section>
+    </section>
     ${invoiceTerms}
     ${paidReviewPrompt}
     <section class="card">
@@ -1948,7 +2173,7 @@ app.get("/desk/invoices/:id", requireAuth, async (request, response) => {
       <p>Total: <strong>${dollars(invoice.totalCents)}</strong></p>
       ${invoice.notes ? `<h2>Notes</h2><p>${esc(invoice.notes)}</p>` : ""}
     </section>
-    <section class="card"><h2>Related Expenses</h2>${compactExpenseTable(invoice.expenses, "No expenses connected to this invoice yet.")}</section>`));
+    <section class="card"><h2>Related Expenses</h2>${compactExpenseTable(invoice.expenses, "No expenses connected to this invoice yet.")}</section>${copyScript()}`));
 });
 
 app.post("/desk/invoices/:id/status", requireAuth, async (request, response) => {
@@ -1957,6 +2182,17 @@ app.post("/desk/invoices/:id/status", requireAuth, async (request, response) => 
   if (status === "Sent") data.sentAt = new Date();
   if (status === "Paid") data.paidAt = new Date();
   await prisma.invoice.update({ where: { id: Number(request.params.id) }, data });
+  response.redirect(`/desk/invoices/${request.params.id}`);
+});
+
+app.post("/desk/invoices/:id/follow-up", requireAuth, async (request, response) => {
+  await prisma.invoice.update({
+    where: { id: Number(request.params.id) },
+    data: {
+      followUpAt: parseFollowUpDate(request.body.followUpAt),
+      followUpNote: request.body.followUpNote?.trim() || null
+    }
+  });
   response.redirect(`/desk/invoices/${request.params.id}`);
 });
 
@@ -2060,6 +2296,17 @@ app.post("/desk/tickets/:id/update", requireAuth, async (request, response) => {
     ...(completedAt ? { completedAt } : {})
   };
   await prisma.ticket.update({ where: { id: Number(request.params.id) }, data });
+  response.redirect(`/desk/tickets/${request.params.id}`);
+});
+
+app.post("/desk/tickets/:id/follow-up", requireAuth, async (request, response) => {
+  await prisma.ticket.update({
+    where: { id: Number(request.params.id) },
+    data: {
+      followUpAt: parseFollowUpDate(request.body.followUpAt),
+      followUpNote: request.body.followUpNote?.trim() || null
+    }
+  });
   response.redirect(`/desk/tickets/${request.params.id}`);
 });
 

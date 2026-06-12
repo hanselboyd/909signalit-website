@@ -22,6 +22,9 @@ model Lead {
   source           String    @default("Website")
   status           String    @default("New Lead")
   notes            String?
+  lastContactedAt  DateTime?
+  followUpAt       DateTime?
+  followUpNote     String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   tickets          Ticket[]
@@ -38,6 +41,8 @@ model Customer {
   address      String?
   city         String?
   notes        String?
+  followUpAt   DateTime?
+  followUpNote String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   tickets      Ticket[]
@@ -66,6 +71,8 @@ model Ticket {
   customerNotes        String?
   recommendedNextSteps String?
   completedAt          DateTime?
+  followUpAt           DateTime?
+  followUpNote         String?
   reviewRequested      Boolean   @default(false)
   reviewReceived       Boolean   @default(false)
   createdAt            DateTime  @default(now())
@@ -95,6 +102,8 @@ model Invoice {
   paymentLink             String?
   stripeCheckoutSessionId String?
   stripePaymentLinkId     String?
+  followUpAt              DateTime?
+  followUpNote            String?
   sentAt                  DateTime?
   paidAt                  DateTime?
   createdAt               DateTime          @default(now())

@@ -144,6 +144,10 @@ Expense tracking allows 909 Signal Desk to track parts, tools, subscriptions, tr
 
 Reports and CSV exports allow 909 Signal Desk to download leads, customers, tickets, invoices, expenses, and monthly revenue/expense/profit summaries for backup and bookkeeping.
 
+### Follow-Up Reminders
+
+Follow-up reminders help track leads needing contact, unpaid invoices, stale tickets, review follow-ups, and customer follow-ups. They are internal CRM reminders and do not send automatic messages.
+
 ## Configured Contact
 
 - `909-260-8660`
