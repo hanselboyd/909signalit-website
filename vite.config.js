@@ -13,6 +13,7 @@ export default defineConfig({
         businessIt: page("./business-it.html"),
         serviceAreas: page("./service-areas.html"),
         contact: page("./contact.html"),
+        terms: page("./terms.html"),
         itSupportOntario: page("./it-support-ontario-ca.html"),
         computerRepairOntario: page("./computer-repair-ontario-ca.html"),
         smallBusinessItSupportOntario: page("./small-business-it-support-ontario-ca.html"),

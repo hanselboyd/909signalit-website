@@ -12,6 +12,7 @@ const port = process.env.PORT || 3000;
 const root = join(process.cwd(), "dist");
 const publicAssetsRoot = join(process.cwd(), "public", "assets");
 const siteUrl = process.env.PUBLIC_SITE_URL || "https://909signalit.com";
+const serviceTermsUrl = "https://909signalit.com/terms.html";
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 const googleReviewLink = process.env.GOOGLE_REVIEW_LINK || "";
 
@@ -289,6 +290,7 @@ function invoiceForm(action, values = {}, message = "") {
   return `<form method="post" action="${esc(action)}">
     <h1>New Invoice</h1>
     ${message}
+    <p class="muted">Estimate terms: This estimate is based on the information currently available and may change if additional issues, parts, labor, access problems, or customer-requested work are discovered. Estimate valid for 7 days unless otherwise stated. Client is responsible for backing up important data before service begins.</p>
     <section class="grid two">
       <label>Customer name <input name="customerName" value="${fieldValue(values, "customerName")}" required></label>
       <label>Customer email <input name="customerEmail" type="email" value="${fieldValue(values, "customerEmail")}"></label>
@@ -360,7 +362,7 @@ function invoicePaymentMessages(invoice) {
   }
 
   const customerName = invoice.customerName || "there";
-  const textMessage = `Hi, this is 909 Signal IT. Here is your secure payment link for today's IT service: ${invoice.paymentLink}. Thank you for choosing 909 Signal IT.`;
+  const textMessage = `Hi, this is 909 Signal IT. Here is your secure payment link for today's IT service: ${invoice.paymentLink}. By paying this invoice, you acknowledge and agree to 909 Signal IT's service terms: ${serviceTermsUrl}. Thank you for choosing 909 Signal IT.`;
   const emailSubject = `909 Signal IT Invoice ${invoice.invoiceNumber}`;
   const emailBody = `Hello ${customerName},
 
@@ -370,6 +372,9 @@ ${invoice.paymentLink}
 
 Invoice: ${invoice.invoiceNumber}
 Amount Due: ${dollars(invoice.totalCents)}
+
+By paying this invoice, you acknowledge and agree to 909 Signal IT's service terms:
+${serviceTermsUrl}
 
 Please let me know if you have any questions.
 
@@ -394,6 +399,7 @@ support@909signalit.com`;
       </div>
     </div>
     <label>Payment Link <input readonly id="invoice-payment-link" value="${esc(invoice.paymentLink)}"></label>
+    <p class="muted">By paying this invoice, client agrees to the <a href="${serviceTermsUrl}" target="_blank" rel="noopener">909 Signal IT Service Terms</a>.</p>
     <div class="row"><button type="button" data-copy-target="invoice-payment-link">Copy Payment Link</button><span class="muted" data-copy-status="invoice-payment-link"></span></div>
   </section>
   <script>
@@ -807,6 +813,7 @@ app.get("/desk/invoices/:id", requireAuth, async (request, response) => {
   const paidReviewPrompt = invoice.status === "Paid"
     ? `<section class="card"><h2>Review Follow-Up</h2><p>Payment received. If this job is complete, request a Google review from the related ticket.</p>${invoice.ticket ? `<a class="button" href="/desk/tickets/${invoice.ticket.id}">Open Ticket</a>` : `<p class="muted">No related ticket is linked to this invoice.</p>`}</section>`
     : "";
+  const invoiceTerms = `<section class="card"><h2>Invoice Terms</h2><p class="muted">Payment is due upon completion unless otherwise agreed in writing. Client is responsible for data backups, passwords, software licenses, account access, and third-party service availability. 909 Signal IT is not responsible for pre-existing issues, data loss, failed hardware, unsupported software, ISP/vendor outages, or indirect business losses. Labor warranty applies only to the specific issue serviced for 7 days. Full service terms apply.</p><p><a href="${serviceTermsUrl}" target="_blank" rel="noopener">${serviceTermsUrl}</a></p></section>`;
   const lineRows = invoice.lineItems.map((item) => `<tr><td>${esc(item.description)}</td><td>${item.quantity}</td><td>${dollars(item.unitPriceCents)}</td><td>${dollars(item.lineTotalCents)}</td></tr>`).join("");
   response.send(layout(invoice.invoiceNumber, `${notice}${stripeMessage}
     <section class="card">
@@ -826,10 +833,12 @@ app.get("/desk/invoices/:id", requireAuth, async (request, response) => {
       <form method="post" action="/desk/invoices/${invoice.id}/payment-link">
         <h2>Payment</h2>
         <p class="muted">Generate a Stripe-hosted Checkout link for this invoice.</p>
+        <p class="muted">By paying, client agrees to the <a href="${serviceTermsUrl}" target="_blank" rel="noopener">909 Signal IT Service Terms</a>.</p>
         <button>Generate Payment Link</button>
       </form>
     </section>
     ${invoicePaymentMessages(invoice)}
+    ${invoiceTerms}
     ${paidReviewPrompt}
     <section class="card">
       <h2>Line Items</h2>

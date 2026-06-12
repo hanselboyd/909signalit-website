@@ -642,6 +642,33 @@ h3 {
   color: var(--navy);
 }
 
+.terms-content {
+  padding-top: 24px;
+}
+
+.terms-content article {
+  max-width: 900px;
+  padding: clamp(24px, 4vw, 42px);
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--green);
+  border-radius: 8px;
+  box-shadow: 0 12px 28px rgba(7, 29, 60, 0.06);
+}
+
+.terms-content h2 {
+  margin-top: 28px;
+  font-size: clamp(1.25rem, 2vw, 1.7rem);
+}
+
+.terms-content h2:first-child {
+  margin-top: 0;
+}
+
+.terms-content p {
+  color: var(--text);
+}
+
 .contact-layout {
   display: grid;
   grid-template-columns: 1.3fr 0.7fr;
