@@ -150,30 +150,34 @@ model Expense {
 }
 
 model RemoteSession {
-  id                String    @id @default(cuid())
-  sessionCode       String    @unique
-  clientName        String
-  phone             String
-  email             String?
-  company           String?
-  deviceType        String?
-  issueSummary      String?
-  consentAccepted   Boolean   @default(false)
-  consentAcceptedAt DateTime?
-  status            String    @default("Requested")
-  ticketId          Int?
-  customerId        Int?
-  leadId            Int?
-  technicianName    String?
-  approvedAt        DateTime?
-  startedAt         DateTime?
-  endedAt           DateTime?
-  remoteTool        String?
-  connectionUrl     String?
-  notes             String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  ticket            Ticket?   @relation(fields: [ticketId], references: [id])
-  customer          Customer? @relation(fields: [customerId], references: [id])
-  lead              Lead?     @relation(fields: [leadId], references: [id])
+  id                      String    @id @default(cuid())
+  sessionCode             String    @unique
+  clientName              String
+  phone                   String
+  email                   String?
+  company                 String?
+  deviceType              String?
+  issueSummary            String?
+  consentAccepted         Boolean   @default(false)
+  consentAcceptedAt       DateTime?
+  status                  String    @default("Requested")
+  ticketId                Int?
+  customerId              Int?
+  leadId                  Int?
+  technicianName          String?
+  approvedAt              DateTime?
+  startedAt               DateTime?
+  endedAt                 DateTime?
+  liveViewStartedAt       DateTime?
+  liveViewEndedAt         DateTime?
+  liveViewLastConnectedAt DateTime?
+  liveViewStatus          String    @default("Not Started")
+  remoteTool              String?
+  connectionUrl           String?
+  notes                   String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  ticket                  Ticket?   @relation(fields: [ticketId], references: [id])
+  customer                Customer? @relation(fields: [customerId], references: [id])
+  lead                    Lead?     @relation(fields: [leadId], references: [id])
 }

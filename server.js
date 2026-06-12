@@ -4,10 +4,14 @@ import { PrismaClient } from "@prisma/client";
 import Stripe from "stripe";
 import { existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
+import { createServer } from "node:http";
 import { extname, join } from "node:path";
+import { URL } from "node:url";
+import { WebSocket, WebSocketServer } from "ws";
 import { isLeadNotificationConfigured, sendLeadNotification } from "./src/server/email.js";
 
 const app = express();
+const server = createServer(app);
 const prisma = new PrismaClient();
 const port = process.env.PORT || 3000;
 const root = join(process.cwd(), "dist");
@@ -97,7 +101,7 @@ app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async
 });
 
 app.use(express.json());
-app.use(session({
+const sessionMiddleware = session({
   name: "signal_desk",
   secret: process.env.SESSION_SECRET || "dev-only-change-me",
   resave: false,
@@ -108,7 +112,9 @@ app.use(session({
     secure: process.env.NODE_ENV === "production",
     maxAge: 1000 * 60 * 60 * 8
   }
-}));
+});
+
+app.use(sessionMiddleware);
 
 function esc(value = "") {
   return String(value ?? "")
@@ -258,6 +264,123 @@ function requireAuth(request, response, next) {
   if (request.session?.adminAuthed) return next();
   response.redirect("/desk/login");
 }
+
+const liveViewRooms = new Map();
+const liveViewWss = new WebSocketServer({ noServer: true });
+
+function liveViewRoom(sessionCode) {
+  if (!liveViewRooms.has(sessionCode)) liveViewRooms.set(sessionCode, { clients: new Set(), technicians: new Set() });
+  return liveViewRooms.get(sessionCode);
+}
+
+function sendLiveView(socket, message) {
+  if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+}
+
+function broadcastLiveView(sockets, message, except) {
+  sockets.forEach((socket) => {
+    if (socket !== except) sendLiveView(socket, message);
+  });
+}
+
+function updateRemoteLiveView(sessionCode, data) {
+  prisma.remoteSession.update({ where: { sessionCode }, data }).catch((error) => {
+    console.error("Remote live view status update failed:", error?.message || error);
+  });
+}
+
+function cleanupLiveViewSocket(socket) {
+  const { sessionCode, role } = socket.liveView || {};
+  if (!sessionCode || !role) return;
+  const room = liveViewRooms.get(sessionCode);
+  if (!room) return;
+  const ownSet = role === "technician" ? room.technicians : room.clients;
+  const otherSet = role === "technician" ? room.clients : room.technicians;
+  ownSet.delete(socket);
+  broadcastLiveView(otherSet, { type: `${role}-disconnected` });
+  if (!room.clients.size && !room.technicians.size) liveViewRooms.delete(sessionCode);
+  updateRemoteLiveView(sessionCode, { liveViewLastConnectedAt: new Date(), liveViewStatus: role === "client" ? "Disconnected" : "Waiting" });
+}
+
+liveViewWss.on("connection", (socket, request) => {
+  socket.isDeskAuthed = Boolean(request.session?.adminAuthed);
+  socket.on("message", async (raw) => {
+    let message;
+    try {
+      message = JSON.parse(String(raw));
+    } catch {
+      sendLiveView(socket, { type: "error", message: "Invalid signaling message." });
+      return;
+    }
+
+    if (message.type === "join") {
+      const sessionCode = String(message.sessionCode || "").trim().toUpperCase();
+      const role = message.role === "technician" ? "technician" : "client";
+      if (!sessionCode) {
+        sendLiveView(socket, { type: "error", message: "Session code is required." });
+        return;
+      }
+      if (role === "technician" && !socket.isDeskAuthed) {
+        sendLiveView(socket, { type: "error", message: "Technician Live View requires desk login." });
+        socket.close();
+        return;
+      }
+      const session = await prisma.remoteSession.findUnique({ where: { sessionCode } });
+      if (!session) {
+        sendLiveView(socket, { type: "error", message: "Remote session was not found." });
+        return;
+      }
+      socket.liveView = { sessionCode, role };
+      const room = liveViewRoom(sessionCode);
+      const ownSet = role === "technician" ? room.technicians : room.clients;
+      const otherSet = role === "technician" ? room.clients : room.technicians;
+      ownSet.add(socket);
+      sendLiveView(socket, { type: "joined", role, technicianConnected: room.technicians.size > 0, clientConnected: room.clients.size > 0 });
+      broadcastLiveView(otherSet, { type: `${role}-connected` }, socket);
+      updateRemoteLiveView(sessionCode, { liveViewLastConnectedAt: new Date(), liveViewStatus: role === "client" ? "Waiting" : session.liveViewStatus || "Waiting" });
+      return;
+    }
+
+    const { sessionCode, role } = socket.liveView || {};
+    if (!sessionCode || !role) {
+      sendLiveView(socket, { type: "error", message: "Join a Live View session before signaling." });
+      return;
+    }
+    const room = liveViewRooms.get(sessionCode);
+    if (!room) return;
+    const targetSet = role === "technician" ? room.clients : room.technicians;
+    if (["offer", "answer", "ice-candidate"].includes(message.type)) {
+      broadcastLiveView(targetSet, message, socket);
+    }
+    if (message.type === "sharing-started") {
+      updateRemoteLiveView(sessionCode, { liveViewStatus: "Sharing", liveViewStartedAt: new Date(), liveViewLastConnectedAt: new Date() });
+      broadcastLiveView(targetSet, { type: "sharing-started" }, socket);
+    }
+    if (message.type === "sharing-stopped") {
+      updateRemoteLiveView(sessionCode, { liveViewStatus: "Ended", liveViewEndedAt: new Date(), liveViewLastConnectedAt: new Date() });
+      broadcastLiveView(targetSet, { type: "sharing-stopped" }, socket);
+    }
+  });
+  socket.on("close", () => cleanupLiveViewSocket(socket));
+});
+
+server.on("upgrade", (request, socket, head) => {
+  const { pathname } = new URL(request.url, `http://${request.headers.host || "localhost"}`);
+  if (pathname !== "/live-view-signal") {
+    socket.destroy();
+    return;
+  }
+  const responseShim = {
+    getHeader() {},
+    setHeader() {},
+    writeHead() {}
+  };
+  sessionMiddleware(request, responseShim, () => {
+    liveViewWss.handleUpgrade(request, socket, head, (ws) => {
+      liveViewWss.emit("connection", ws, request);
+    });
+  });
+});
 
 function layout(title, body) {
   return `<!doctype html>
@@ -661,9 +784,120 @@ function publicRemotePage(message = "") {
   </main></body></html>`;
 }
 
+function clientLiveViewPage(session) {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>909 Signal Live View</title><style>
+    :root{--navy:#071d3c;--blue:#1268f3;--green:#35b51f;--gray:#f3f6fa;--border:#dbe4ef;--text:#172234}*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);background:var(--gray);line-height:1.6}
+    main{width:min(920px,calc(100% - 32px));margin:28px auto}.card{padding:22px;margin-bottom:18px;background:white;border:1px solid var(--border);border-radius:8px;box-shadow:0 12px 28px rgba(7,29,60,.06)}h1,h2{margin:0 0 12px;color:var(--navy)}.muted{color:#5d6b7f}.status{font-weight:900;color:var(--blue)}button,.button{display:inline-flex;width:max-content;min-height:42px;align-items:center;justify-content:center;padding:10px 16px;color:white;background:var(--blue);border:0;border-radius:8px;font-weight:900;text-decoration:none;cursor:pointer}.stop{background:#b42318}.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  </style></head><body><main>
+    <section class="card"><p class="muted">Consent-first browser screen sharing</p><h1>909 Signal Live View</h1><p>Session code: <strong>${esc(session.sessionCode)}</strong></p><p class="status" id="status">Waiting</p></section>
+    <section class="card"><h2>Before Sharing</h2><ul><li>Only share your screen if you are currently working with 909 Signal IT.</li><li>You can stop sharing at any time.</li><li>Do not type or display passwords while sharing.</li><li>909 Signal IT does not record this session.</li><li>Do not display banking, medical, or private documents.</li></ul></section>
+    <section class="card"><div class="row"><button id="start">Start Screen Share</button><button id="stop" class="stop" disabled>Stop Sharing</button><a class="button" href="/remote">Back</a></div><p class="muted" id="browser-help"></p></section>
+  </main><script>
+    const sessionCode = ${JSON.stringify(session.sessionCode)};
+    const statusEl = document.getElementById("status");
+    const helpEl = document.getElementById("browser-help");
+    const startButton = document.getElementById("start");
+    const stopButton = document.getElementById("stop");
+    let ws;
+    let pc;
+    let stream;
+    const iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
+    function setStatus(text) { statusEl.textContent = text; }
+    function send(message) { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message)); }
+    function connect() {
+      ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/live-view-signal");
+      ws.addEventListener("open", () => send({ type: "join", role: "client", sessionCode }));
+      ws.addEventListener("message", async (event) => {
+        const message = JSON.parse(event.data);
+        if (message.type === "technician-connected") setStatus(stream ? "Sharing active - technician connected" : "Technician connected");
+        if (message.type === "answer" && pc) await pc.setRemoteDescription(message);
+        if (message.type === "ice-candidate" && pc && message.candidate) await pc.addIceCandidate(message.candidate);
+        if (message.type === "error") setStatus(message.message || "Connection error");
+      });
+      ws.addEventListener("close", () => { if (stream) setStatus("Disconnected"); });
+    }
+    function stopSharing() {
+      if (stream) stream.getTracks().forEach((track) => track.stop());
+      stream = null;
+      if (pc) pc.close();
+      pc = null;
+      startButton.disabled = false;
+      stopButton.disabled = true;
+      send({ type: "sharing-stopped" });
+      setStatus("Sharing stopped");
+    }
+    startButton.addEventListener("click", async () => {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+        helpEl.textContent = "Your browser does not support screen sharing. Please use Chrome, Edge, or another supported desktop browser.";
+        return;
+      }
+      try {
+        stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+        pc = new RTCPeerConnection({ iceServers });
+        stream.getTracks().forEach((track) => {
+          track.addEventListener("ended", stopSharing);
+          pc.addTrack(track, stream);
+        });
+        pc.onicecandidate = (event) => { if (event.candidate) send({ type: "ice-candidate", candidate: event.candidate }); };
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        send({ type: "sharing-started" });
+        send({ type: "offer", sdp: pc.localDescription.sdp });
+        startButton.disabled = true;
+        stopButton.disabled = false;
+        setStatus("Sharing active");
+      } catch (error) {
+        setStatus("Sharing was not started.");
+        helpEl.textContent = error && error.message ? error.message : "Screen sharing permission was cancelled.";
+      }
+    });
+    stopButton.addEventListener("click", stopSharing);
+    connect();
+  </script></body></html>`;
+}
+
+function technicianLiveViewPage(session) {
+  return layout("Live View", `<section class="card"><div class="row"><h1>909 Signal Live View</h1><a class="button" href="/desk/remote-sessions/${session.id}">Back to Remote Session</a></div><p><strong>Session:</strong> ${esc(session.sessionCode)}<br><strong>Client:</strong> ${esc(session.clientName)}<br><strong>Phone:</strong> ${esc(session.phone)}<br><strong>Device:</strong> ${esc(session.deviceType || "")}</p><p class="muted">Viewing only. Do not ask client to display passwords. 909 Signal IT does not record this session. Do not view banking, medical, or private documents unless required and client-approved.</p><p><strong>Status:</strong> <span id="live-status">Waiting for client</span></p></section><section class="card"><video id="remote-screen" autoplay playsinline controls style="width:100%;min-height:320px;background:#071d3c;border-radius:8px"></video></section><script>
+    const sessionCode = ${JSON.stringify(session.sessionCode)};
+    const statusEl = document.getElementById("live-status");
+    const video = document.getElementById("remote-screen");
+    let ws;
+    let pc;
+    const iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
+    function setStatus(text) { statusEl.textContent = text; }
+    function send(message) { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message)); }
+    function ensurePeer() {
+      if (pc) return pc;
+      pc = new RTCPeerConnection({ iceServers });
+      pc.ontrack = (event) => { video.srcObject = event.streams[0]; setStatus("Client sharing"); };
+      pc.onicecandidate = (event) => { if (event.candidate) send({ type: "ice-candidate", candidate: event.candidate }); };
+      pc.onconnectionstatechange = () => { if (["disconnected", "failed", "closed"].includes(pc.connectionState)) setStatus("Disconnected"); };
+      return pc;
+    }
+    ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/live-view-signal");
+    ws.addEventListener("open", () => send({ type: "join", role: "technician", sessionCode }));
+    ws.addEventListener("message", async (event) => {
+      const message = JSON.parse(event.data);
+      if (message.type === "joined") setStatus(message.clientConnected ? "Client connected" : "Waiting for client");
+      if (message.type === "client-connected") setStatus("Client connected");
+      if (message.type === "client-disconnected" || message.type === "sharing-stopped") { setStatus("Disconnected"); video.srcObject = null; if (pc) pc.close(); pc = null; }
+      if (message.type === "offer") {
+        const peer = ensurePeer();
+        await peer.setRemoteDescription({ type: "offer", sdp: message.sdp });
+        const answer = await peer.createAnswer();
+        await peer.setLocalDescription(answer);
+        send({ type: "answer", sdp: peer.localDescription.sdp });
+      }
+      if (message.type === "ice-candidate" && pc && message.candidate) await pc.addIceCandidate(message.candidate);
+      if (message.type === "error") setStatus(message.message || "Connection error");
+    });
+    ws.addEventListener("close", () => setStatus("Disconnected"));
+  </script>`);
+}
+
 function remoteSessionTable(sessions) {
-  return `<table><thead><tr><th>Session</th><th>Client</th><th>Phone</th><th>Device</th><th>Status</th><th>Consent</th><th>Created</th><th></th></tr></thead><tbody>${sessions.map((session) => `
-    <tr><td><a href="/desk/remote-sessions/${session.id}">${esc(session.sessionCode)}</a></td><td>${esc(session.clientName)}</td><td>${esc(session.phone)}</td><td>${esc(session.deviceType || "")}</td><td>${esc(session.status)}</td><td>${session.consentAccepted ? "Accepted" : "Not accepted"}</td><td>${displayDate(session.createdAt)}</td><td><a href="/desk/remote-sessions/${session.id}">View</a></td></tr>`).join("") || `<tr><td colspan="8">No remote sessions found.</td></tr>`}</tbody></table>`;
+  return `<table><thead><tr><th>Session</th><th>Client</th><th>Phone</th><th>Device</th><th>Status</th><th>Live View</th><th>Consent</th><th>Created</th><th></th></tr></thead><tbody>${sessions.map((session) => `
+    <tr><td><a href="/desk/remote-sessions/${session.id}">${esc(session.sessionCode)}</a></td><td>${esc(session.clientName)}</td><td>${esc(session.phone)}</td><td>${esc(session.deviceType || "")}</td><td>${esc(session.status)}</td><td>${esc(session.liveViewStatus || "Not Started")}</td><td>${session.consentAccepted ? "Accepted" : "Not accepted"}</td><td>${displayDate(session.createdAt)}</td><td><a href="/desk/remote-sessions/${session.id}">View</a></td></tr>`).join("") || `<tr><td colspan="9">No remote sessions found.</td></tr>`}</tbody></table>`;
 }
 
 function remoteSessionLinkSummary(session) {
@@ -1453,7 +1687,17 @@ app.post("/remote", async (request, response) => {
       leadId: ticket?.leadId || null
     }
   });
-  response.send(publicRemotePage(`<section class="card"><h2>Your remote support request has been created.</h2><p>Give this code to 909 Signal IT: <strong>${esc(session.sessionCode)}</strong></p><p>A technician will guide you through the next step.</p></section>`));
+  response.send(publicRemotePage(`<section class="card"><h2>Your remote support request has been created.</h2><p>Give this code to 909 Signal IT: <strong>${esc(session.sessionCode)}</strong></p><p>A technician will guide you through the next step.</p><a class="button" href="/remote/live/${esc(session.sessionCode)}">Start Live View</a></section>`));
+});
+
+app.get("/remote/live/:sessionCode", async (request, response) => {
+  const sessionCode = String(request.params.sessionCode || "").trim().toUpperCase();
+  const session = await prisma.remoteSession.findUnique({ where: { sessionCode } });
+  if (!session || ["Cancelled", "Ended"].includes(session.status)) {
+    response.status(404).send(publicRemotePage(`<section class="card"><p class="danger">This Live View session is not available. Please contact 909 Signal IT.</p></section>`));
+    return;
+  }
+  response.send(clientLiveViewPage(session));
 });
 
 app.get("/desk/login", (request, response) => {
@@ -1534,6 +1778,7 @@ app.get("/desk", requireAuth, async (request, response) => {
     remoteSessionsRequested,
     remoteSessionsActive,
     remoteSessionsCompletedThisMonth,
+    activeLiveViewSessions,
     recentLeads,
     recentTickets,
     recentInvoices
@@ -1565,6 +1810,7 @@ app.get("/desk", requireAuth, async (request, response) => {
     prisma.remoteSession.count({ where: { status: "Requested" } }),
     prisma.remoteSession.count({ where: { status: "Active" } }),
     prisma.remoteSession.count({ where: { status: "Ended", endedAt: { gte: month.start, lt: month.end } } }),
+    prisma.remoteSession.count({ where: { liveViewStatus: "Sharing" } }),
     prisma.lead.findMany({ orderBy: { createdAt: "desc" }, take: 12 }),
     prisma.ticket.findMany({ include: { customer: true, lead: true }, orderBy: { updatedAt: "desc" }, take: 20 }),
     prisma.invoice.findMany({ orderBy: { updatedAt: "desc" }, take: 20 })
@@ -1616,6 +1862,7 @@ app.get("/desk", requireAuth, async (request, response) => {
     ${metricCard("Remote sessions requested", remoteSessionsRequested)}
     ${metricCard("Remote sessions active", remoteSessionsActive)}
     ${metricCard("Remote sessions completed this month", remoteSessionsCompletedThisMonth)}
+    ${metricCard("Active Live View sessions", activeLiveViewSessions)}
     ${attentionCard("Remote Sessions", remoteSessionsRequested + remoteSessionsActive, "/desk/remote-sessions")}
   </div></section>
   <section class="card"><h2>Needs Attention</h2><div class="grid">
@@ -1690,11 +1937,14 @@ app.get("/desk/remote-sessions/:id", requireAuth, async (request, response) => {
     <div class="row"><h1>${esc(session.sessionCode)}</h1><a class="button" href="/desk/remote-sessions">Back to Remote Sessions</a></div>
     <p><strong>Client:</strong> ${esc(session.clientName)}<br><strong>Phone:</strong> ${esc(session.phone)}<br><strong>Email:</strong> ${esc(session.email || "")}<br><strong>Company:</strong> ${esc(session.company || "")}</p>
     <p><strong>Device:</strong> ${esc(session.deviceType || "")}<br><strong>Status:</strong> ${esc(session.status)}<br><strong>Consent:</strong> ${session.consentAccepted ? `Accepted ${displayDateTime(session.consentAcceptedAt)}` : "Not accepted"}</p>
+    <p><strong>Live View:</strong> ${esc(session.liveViewStatus || "Not Started")}<br><strong>Last connected:</strong> ${displayDateTime(session.liveViewLastConnectedAt)}<br><strong>Started:</strong> ${displayDateTime(session.liveViewStartedAt)}<br><strong>Ended:</strong> ${displayDateTime(session.liveViewEndedAt)}</p>
     <p><strong>Issue summary:</strong><br>${esc(session.issueSummary || "")}</p>
     <p><strong>Linked records:</strong><br>${remoteSessionLinkSummary(session)}</p>
     <p><strong>Approved:</strong> ${displayDateTime(session.approvedAt)}<br><strong>Started:</strong> ${displayDateTime(session.startedAt)}<br><strong>Ended:</strong> ${displayDateTime(session.endedAt)}<br><strong>Created:</strong> ${displayDateTime(session.createdAt)}<br><strong>Updated:</strong> ${displayDateTime(session.updatedAt)}</p>
   </section>
   <section class="card row">
+    <a class="button" href="/desk/remote-sessions/${session.id}/live">Open Live View</a>
+    ${copyInlineButton(`remote-live-link-${session.id}`, `${siteUrl}/remote/live/${session.sessionCode}`, "Copy Client Live View Link")}
     <form method="post" action="/desk/remote-sessions/${session.id}/status"><input type="hidden" name="status" value="Approved"><button>Approve Session</button></form>
     <form method="post" action="/desk/remote-sessions/${session.id}/status"><input type="hidden" name="status" value="Active"><button>Mark Active</button></form>
     <form method="post" action="/desk/remote-sessions/${session.id}/status"><input type="hidden" name="status" value="Ended"><button>Mark Ended</button></form>
@@ -1709,7 +1959,13 @@ app.get("/desk/remote-sessions/:id", requireAuth, async (request, response) => {
     <label>Connection URL <input name="connectionUrl" value="${esc(session.connectionUrl || "")}"></label>
     <label>Notes <textarea name="notes">${esc(session.notes || "")}</textarea></label>
     <button>Save Notes</button>
-  </form>`));
+  </form>${copyScript()}`));
+});
+
+app.get("/desk/remote-sessions/:id/live", requireAuth, async (request, response) => {
+  const session = await prisma.remoteSession.findUnique({ where: { id: request.params.id } });
+  if (!session) return response.status(404).send(layout("Remote session not found", "<section class='card'>Remote session not found.</section>"));
+  response.send(technicianLiveViewPage(session));
 });
 
 app.post("/desk/remote-sessions/:id/status", requireAuth, async (request, response) => {
@@ -1846,8 +2102,8 @@ app.get("/desk/reports/export/expenses.csv", requireAuth, async (request, respon
 app.get("/desk/reports/export/remote-sessions.csv", requireAuth, async (request, response) => {
   const sessions = await prisma.remoteSession.findMany({ orderBy: { createdAt: "desc" } });
   sendCsv(response, "remote-sessions", [
-    ["sessionCode", "clientName", "phone", "email", "company", "deviceType", "issueSummary", "consentAccepted", "consentAcceptedAt", "status", "approvedAt", "startedAt", "endedAt", "remoteTool", "createdAt"],
-    ...sessions.map((session) => [session.sessionCode, session.clientName, session.phone, session.email, session.company, session.deviceType, session.issueSummary, session.consentAccepted, isoDate(session.consentAcceptedAt), session.status, isoDate(session.approvedAt), isoDate(session.startedAt), isoDate(session.endedAt), session.remoteTool, isoDate(session.createdAt)])
+    ["sessionCode", "clientName", "phone", "email", "company", "deviceType", "issueSummary", "consentAccepted", "consentAcceptedAt", "status", "liveViewStatus", "liveViewStartedAt", "liveViewEndedAt", "liveViewLastConnectedAt", "approvedAt", "startedAt", "endedAt", "remoteTool", "createdAt"],
+    ...sessions.map((session) => [session.sessionCode, session.clientName, session.phone, session.email, session.company, session.deviceType, session.issueSummary, session.consentAccepted, isoDate(session.consentAcceptedAt), session.status, session.liveViewStatus, isoDate(session.liveViewStartedAt), isoDate(session.liveViewEndedAt), isoDate(session.liveViewLastConnectedAt), isoDate(session.approvedAt), isoDate(session.startedAt), isoDate(session.endedAt), session.remoteTool, isoDate(session.createdAt)])
   ]);
 });
 
