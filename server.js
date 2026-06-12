@@ -52,7 +52,7 @@ const remoteDeviceTypes = ["Windows PC", "Mac", "Chromebook", "Android", "iPhone
 const remoteSessionStatuses = ["Requested", "Approved", "Active", "Ended", "Cancelled"];
 const urgencyOptions = ["Normal", "Same-day if available", "Emergency"];
 const contactOptions = ["Call", "Text", "Email"];
-const sourceOptions = ["Website", "Google Business Profile", "Phone", "Text", "Referral", "Facebook", "Nextdoor", "Walk-in", "Other"];
+const sourceOptions = ["Website Contact Form", "Website", "Google Business Profile", "Phone", "Text", "Referral", "Facebook", "Nextdoor", "Walk-in", "Other"];
 
 app.set("trust proxy", 1);
 app.use(express.urlencoded({ extended: true }));
@@ -1629,6 +1629,14 @@ app.post("/api/leads", async (request, response) => {
   }
 
   try {
+    const source = "Website Contact Form";
+    const pageContext = String(body.pageContext || "").trim();
+    const remoteSupportAcceptable = String(body.remoteSupportAcceptable || "").trim();
+    const notes = [
+      pageContext ? `Page/source context: ${pageContext}` : "",
+      remoteSupportAcceptable ? `Remote support acceptable: ${remoteSupportAcceptable}` : "",
+      body.notes?.trim() || ""
+    ].filter(Boolean).join("\n");
     const lead = await prisma.lead.create({
       data: {
         name: body.name.trim(),
@@ -1641,8 +1649,9 @@ app.post("/api/leads", async (request, response) => {
         urgency: body.urgency,
         preferredContact: body.preferredContact,
         message: body.message.trim(),
-        source: body.source?.trim() || "Website",
-        status: "New Lead"
+        source,
+        status: "New Lead",
+        notes: notes || null
       }
     });
 
@@ -1650,7 +1659,7 @@ app.post("/api/leads", async (request, response) => {
       console.error("Lead notification email failed:", error?.message || error);
     });
 
-    response.json({ ok: true, message: "Thank you. Your request has been received. 909 Signal IT will follow up as soon as possible." });
+    response.json({ ok: true, message: "Thanks — your request was received. 909 Signal IT will review the issue and follow up as soon as possible." });
   } catch (error) {
     console.error(error);
     response.status(500).json({ ok: false, message: "The request could not be saved. Please call or text 909-260-8660." });

@@ -10,8 +10,19 @@ if (toggle && nav) {
 }
 
 const leadForms = document.querySelectorAll("[data-lead-form]");
+const leadPageContext = new URLSearchParams(window.location.search).get("source");
+const pageContextLabels = {
+  "it-support-page": "IT Support Page",
+  "services-page": "Services Page",
+  "contact-page": "Contact Page"
+};
 
 leadForms.forEach((leadForm) => {
+  const pageContextInput = leadForm.querySelector("input[name='pageContext']");
+  if (pageContextInput && leadPageContext) {
+    pageContextInput.value = pageContextLabels[leadPageContext] || leadPageContext;
+  }
+
   const leadFormMessage = leadForm.querySelector("[data-lead-form-message]");
   if (!leadFormMessage) return;
 
@@ -29,7 +40,7 @@ leadForms.forEach((leadForm) => {
         body: JSON.stringify(Object.fromEntries(new FormData(leadForm)))
       });
       const result = await response.json();
-      leadFormMessage.textContent = result.message || "Thank you. Your request has been received. 909 Signal IT will follow up as soon as possible.";
+      leadFormMessage.textContent = result.message || "Thanks — your request was received. 909 Signal IT will review the issue and follow up as soon as possible.";
       leadFormMessage.classList.toggle("form-error", !response.ok);
       leadFormMessage.classList.toggle("form-success", response.ok);
       if (response.ok) leadForm.reset();

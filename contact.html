@@ -28,8 +28,9 @@
         <h1>Contact 909 Signal IT</h1>
         <p>Call, text, or book an appointment for local IT support in Ontario, CA and nearby Inland Empire cities.</p>
         <div class="cta-row">
-          <a class="button primary" href="tel:+19092608660">Call or Text: 909-260-8660</a>
-          <a class="button secondary" href="/contact.html#booking">Book an Appointment</a>
+          <a class="button primary" href="tel:+19092608660">Call 909-260-8660</a>
+          <a class="button secondary" href="mailto:support@909signalit.com">Email support@909signalit.com</a>
+          <a class="button ghost" href="/contact.html#lead-form">Request IT Support</a>
         </div>
       </section>
       <section class="section booking-section" id="booking">
@@ -59,6 +60,8 @@
         <form class="contact-form" id="lead-form" data-lead-form aria-label="Service request form">
           <h2>Service Request</h2>
           <p class="form-message" id="lead-form-message" data-lead-form-message role="status" aria-live="polite"></p>
+          <input type="hidden" name="source" value="Website Contact Form" />
+          <input type="hidden" name="pageContext" value="Contact Page" />
           <label>Name <input type="text" name="name" required /></label>
           <label>Phone <input type="tel" name="phone" required /></label>
           <label>Email <input type="email" name="email" /></label>
@@ -104,6 +107,14 @@
               <option>Call</option>
               <option>Text</option>
               <option>Email</option>
+            </select>
+          </label>
+          <label>Remote support acceptable?
+            <select name="remoteSupportAcceptable" required>
+              <option value="">Select one</option>
+              <option>Yes</option>
+              <option>No</option>
+              <option>Not sure</option>
             </select>
           </label>
           <label>Message <textarea name="message" rows="5" required></textarea></label>

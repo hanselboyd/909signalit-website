@@ -78,8 +78,9 @@
               <span>Homes & Small Businesses</span>
             </div>
             <div class="cta-row">
-              <a class="button primary" href="tel:+19092608660">Call or Text for Help</a>
-              <a class="button secondary" href="/contact.html#booking">Book an Appointment</a>
+              <a class="button primary" href="tel:+19092608660">Call 909-260-8660</a>
+              <a class="button secondary" href="mailto:support@909signalit.com">Email support@909signalit.com</a>
+              <a class="button ghost" href="#homepage-request-support">Request IT Support</a>
               <a class="button ghost" href="/services.html">View Services</a>
             </div>
           </div>
@@ -104,7 +105,7 @@
         </div>
       </section>
 
-      <section class="home-lead-section">
+      <section class="home-lead-section" id="homepage-request-support">
         <div class="home-lead-card">
           <div>
             <p class="eyebrow">Fast request</p>
@@ -113,14 +114,25 @@
           </div>
           <form class="compact-lead-form" data-lead-form aria-label="Request IT Support">
             <p class="form-message" data-lead-form-message role="status" aria-live="polite"></p>
-            <input type="hidden" name="source" value="Homepage" />
-            <input type="hidden" name="urgency" value="Normal" />
+            <input type="hidden" name="source" value="Website Contact Form" />
+            <input type="hidden" name="pageContext" value="Homepage" />
             <input type="hidden" name="preferredContact" value="Call or Text" />
-            <input type="hidden" name="customerType" value="Unknown" />
-            <input type="hidden" name="email" value="" />
             <input type="hidden" name="businessName" value="" />
             <label>Name <input type="text" name="name" required /></label>
             <label>Phone <input type="tel" name="phone" required /></label>
+            <label>Email <input type="email" name="email" /></label>
+            <label>Customer Type
+              <select name="customerType" required>
+                <option value="">Select one</option>
+                <option>Residential</option>
+                <option>Business</option>
+                <option>Warehouse</option>
+                <option>Restaurant</option>
+                <option>Church</option>
+                <option>Nonprofit</option>
+                <option>Other</option>
+              </select>
+            </label>
             <label>Service Needed
               <select name="serviceRequested" required>
                 <option value="">Select a service</option>
@@ -138,8 +150,23 @@
               </select>
             </label>
             <label>City <input type="text" name="city" required /></label>
+            <label>Urgency
+              <select name="urgency" required>
+                <option>Normal</option>
+                <option>Same-day if available</option>
+                <option>Emergency</option>
+              </select>
+            </label>
+            <label>Remote Support OK?
+              <select name="remoteSupportAcceptable" required>
+                <option value="">Select one</option>
+                <option>Yes</option>
+                <option>No</option>
+                <option>Not sure</option>
+              </select>
+            </label>
             <label class="full">Message <textarea name="message" rows="3" placeholder="Briefly describe the issue" required></textarea></label>
-            <button class="button primary" type="submit">Request Support</button>
+            <button class="button primary" type="submit">Request IT Support</button>
           </form>
         </div>
       </section>
@@ -165,7 +192,7 @@
         <div class="cta-row">
           <a class="button primary" href="tel:+19092608660">Call 909-260-8660</a>
           <a class="button secondary" href="mailto:support@909signalit.com">Email support@909signalit.com</a>
-          <a class="button ghost" href="/contact.html">Request Help</a>
+          <a class="button ghost" href="#homepage-request-support">Request IT Support</a>
         </div>
       </section>
 
@@ -308,7 +335,7 @@
         <p>Services include computer repair, Wi-Fi troubleshooting, printer setup, remote support, network help, Microsoft 365/email support, POS support, and small business IT help across nearby Inland Empire communities.</p>
         <div class="cta-row">
           <a class="button secondary" href="/services.html">View Services</a>
-          <a class="button primary" href="/contact.html">Request Local IT Support</a>
+          <a class="button primary" href="#homepage-request-support">Request IT Support</a>
         </div>
       </section>
 
@@ -325,8 +352,9 @@
         <h2>Need IT help in Ontario or the Inland Empire?</h2>
         <p>Call, text, or book an appointment for practical support.</p>
         <div class="cta-row">
-          <a class="button primary" href="tel:+19092608660">Call or Text for Help</a>
-          <a class="button secondary" href="/contact.html">Contact 909 Signal IT</a>
+          <a class="button primary" href="tel:+19092608660">Call 909-260-8660</a>
+          <a class="button secondary" href="mailto:support@909signalit.com">Email support@909signalit.com</a>
+          <a class="button ghost" href="#homepage-request-support">Request IT Support</a>
         </div>
       </section>
     </main>
