@@ -182,6 +182,27 @@ function nowMonthStart() {
   return new Date(now.getFullYear(), now.getMonth(), 1);
 }
 
+function todayRange() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return { start, end };
+}
+
+function lastSevenDaysStart() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  start.setDate(start.getDate() - 6);
+  return start;
+}
+
+function currentMonthRange() {
+  const start = nowMonthStart();
+  const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+  return { start, end };
+}
+
 function adminConfigured() {
   return Boolean(process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD && process.env.SESSION_SECRET);
 }
@@ -214,6 +235,9 @@ function layout(title, body) {
     .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
     .grid.two { grid-template-columns:repeat(2,1fr); }
     .metric strong { display:block; font-size:2rem; color:var(--navy); }
+    .attention-card { display:grid; gap:8px; color:var(--navy); text-decoration:none; }
+    .attention-card strong { font-size:2rem; color:var(--blue); }
+    .attention-card small { color:#5d6b7f; font-weight:800; }
     table { width:100%; border-collapse:collapse; overflow:hidden; }
     th, td { padding:12px; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; }
     th { color:var(--navy); background:#f8fbff; }
@@ -444,6 +468,55 @@ function customerRecentActivity(tickets, invoices) {
       <td><a href="${esc(item.href)}">${esc(item.label)}</a></td>
       <td>${esc(item.detail)}</td>
     </tr>`).join("") || `<tr><td colspan="3">No recent activity yet.</td></tr>`}</tbody></table>`;
+}
+
+function metricCard(label, value, note = "") {
+  return `<div class="card metric"><span>${esc(label)}</span><strong>${esc(value)}</strong>${note ? `<p class="muted">${esc(note)}</p>` : ""}</div>`;
+}
+
+function attentionCard(label, count, href) {
+  return `<a class="card attention-card" href="${esc(href)}"><span>${esc(label)}</span><strong>${count}</strong><small>Open list</small></a>`;
+}
+
+function recentActivityTable(items) {
+  return `<table><thead><tr><th>Type</th><th>Label</th><th>Customer/Lead</th><th>Status</th><th>Date</th></tr></thead><tbody>${items.map((item) => `
+    <tr>
+      <td>${esc(item.type)}</td>
+      <td><a href="${esc(item.href)}">${esc(item.label)}</a></td>
+      <td>${esc(item.name || "")}</td>
+      <td>${esc(item.status || "")}</td>
+      <td>${displayDateTime(item.date)}</td>
+    </tr>`).join("") || `<tr><td colspan="5">No recent activity yet.</td></tr>`}</tbody></table>`;
+}
+
+function dashboardActivityItems(leads, tickets, invoices) {
+  const items = [
+    ...leads.map((lead) => ({
+      type: "New lead",
+      label: lead.serviceRequested || `Lead ${lead.id}`,
+      name: lead.name,
+      status: lead.status,
+      date: lead.createdAt,
+      href: `/desk/leads/${lead.id}`
+    })),
+    ...tickets.map((ticket) => ({
+      type: ["Completed", "Closed"].includes(ticket.status) ? "Completed ticket" : "New ticket",
+      label: `${ticket.ticketNumber} - ${ticket.title}`,
+      name: ticket.customer?.name || ticket.lead?.name || "",
+      status: ticket.status,
+      date: ["Completed", "Closed"].includes(ticket.status) ? ticket.completedAt || ticket.updatedAt : ticket.createdAt,
+      href: `/desk/tickets/${ticket.id}`
+    })),
+    ...invoices.map((invoice) => ({
+      type: invoice.status === "Paid" ? "Paid invoice" : "New invoice",
+      label: `${invoice.invoiceNumber} - ${dollars(invoice.totalCents)}`,
+      name: invoice.customerName,
+      status: invoice.status,
+      date: invoice.status === "Paid" ? invoice.paidAt || invoice.updatedAt : invoice.createdAt,
+      href: `/desk/invoices/${invoice.id}`
+    }))
+  ];
+  return items.filter((item) => item.date).sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 10);
 }
 
 function ticketContactName(ticket) {
@@ -1028,25 +1101,104 @@ app.get("/desk/logout", (request, response) => {
 });
 
 app.get("/desk", requireAuth, async (request, response) => {
-  const [newLeads, scheduledJobs, inProgress, completedThisMonth, reviewRequestsNeeded, reviewsReceived, recentLeads, recentTickets] = await Promise.all([
-    prisma.lead.count({ where: { status: "New Lead" } }),
+  const today = todayRange();
+  const weekStart = lastSevenDaysStart();
+  const month = currentMonthRange();
+  const completedStatus = { status: { in: ["Completed", "Closed"] } };
+  const needsReviewWhere = { ...completedStatus, reviewRequested: false, reviewReceived: false };
+  const openInvoiceStatuses = ["Draft", "Sent", "Partially Paid", "Overdue"];
+  const sentUnpaidStatuses = ["Sent", "Partially Paid", "Overdue"];
+  const nonVoidInvoiceWhere = { status: { notIn: ["Void", "Refunded"] } };
+
+  const [
+    newLeadsToday,
+    newLeadsWeek,
+    openLeads,
+    convertedLeads,
+    openTickets,
+    scheduledJobs,
+    inProgressJobs,
+    completedThisMonth,
+    ticketsNeedingInvoice,
+    ticketsNeedingReview,
+    draftInvoices,
+    sentUnpaidInvoices,
+    paidInvoicesThisMonth,
+    paidRevenueThisMonth,
+    openBalance,
+    averageInvoiceTotal,
+    reviewRequestsSent,
+    reviewsReceived,
+    recentLeads,
+    recentTickets,
+    recentInvoices
+  ] = await Promise.all([
+    prisma.lead.count({ where: { createdAt: { gte: today.start, lt: today.end } } }),
+    prisma.lead.count({ where: { createdAt: { gte: weekStart } } }),
+    prisma.lead.count({ where: { status: { notIn: ["Completed", "Closed", "Lost"] } } }),
+    prisma.lead.count({ where: { OR: [{ tickets: { some: {} } }, { invoices: { some: {} } }] } }),
+    prisma.ticket.count({ where: { status: { notIn: ["Completed", "Closed"] } } }),
     prisma.ticket.count({ where: { status: "Scheduled" } }),
     prisma.ticket.count({ where: { status: "In Progress" } }),
-    prisma.ticket.count({ where: { status: "Completed", updatedAt: { gte: nowMonthStart() } } }),
-    prisma.ticket.count({ where: { status: { in: ["Completed", "Closed"] }, reviewRequested: false } }),
+    prisma.ticket.count({ where: { ...completedStatus, completedAt: { gte: month.start, lt: month.end } } }),
+    prisma.ticket.count({ where: { ...completedStatus, invoices: { none: {} } } }),
+    prisma.ticket.count({ where: needsReviewWhere }),
+    prisma.invoice.count({ where: { status: "Draft" } }),
+    prisma.invoice.count({ where: { status: { in: sentUnpaidStatuses } } }),
+    prisma.invoice.count({ where: { status: "Paid", paidAt: { gte: month.start, lt: month.end } } }),
+    prisma.invoice.aggregate({ where: { status: "Paid", paidAt: { gte: month.start, lt: month.end } }, _sum: { totalCents: true } }),
+    prisma.invoice.aggregate({ where: { status: { in: openInvoiceStatuses } }, _sum: { totalCents: true } }),
+    prisma.invoice.aggregate({ where: nonVoidInvoiceWhere, _avg: { totalCents: true } }),
+    prisma.ticket.count({ where: { reviewRequested: true, reviewReceived: false } }),
     prisma.ticket.count({ where: { reviewReceived: true } }),
-    prisma.lead.findMany({ orderBy: { createdAt: "desc" }, take: 8 }),
-    prisma.ticket.findMany({ orderBy: { updatedAt: "desc" }, take: 8 })
+    prisma.lead.findMany({ orderBy: { createdAt: "desc" }, take: 12 }),
+    prisma.ticket.findMany({ include: { customer: true, lead: true }, orderBy: { updatedAt: "desc" }, take: 20 }),
+    prisma.invoice.findMany({ orderBy: { updatedAt: "desc" }, take: 20 })
   ]);
-  response.send(layout("Dashboard", `<section class="card row"><a class="button" href="/desk/leads/new">Add Lead</a></section><section class="grid">
-    <div class="card metric"><span>New leads</span><strong>${newLeads}</strong></div>
-    <div class="card metric"><span>Scheduled jobs</span><strong>${scheduledJobs}</strong></div>
-    <div class="card metric"><span>In progress</span><strong>${inProgress}</strong></div>
-    <div class="card metric"><span>Completed this month</span><strong>${completedThisMonth}</strong></div>
-    <div class="card metric"><span>Review requests needed</span><strong>${reviewRequestsNeeded}</strong></div>
-    <div class="card metric"><span>Reviews received</span><strong>${reviewsReceived}</strong></div>
-  </section><section class="card"><h1>Recent Leads</h1>${leadTable(recentLeads)}</section>
-  <section class="card"><h1>Recent Tickets</h1>${ticketTable(recentTickets)}</section>`));
+
+  const paidRevenueCents = paidRevenueThisMonth._sum.totalCents || 0;
+  const openBalanceCents = openBalance._sum.totalCents || 0;
+  const averageInvoiceCents = Math.round(averageInvoiceTotal._avg.totalCents || 0);
+  const activityItems = dashboardActivityItems(recentLeads, recentTickets, recentInvoices);
+
+  response.send(layout("Dashboard", `<section class="card">
+    <div class="row"><h1>Dashboard</h1><a class="button" href="/desk/leads/new">Add Lead</a><a class="button" href="/desk/tickets">Tickets</a><a class="button" href="/desk/invoices">Invoices</a></div>
+    <p class="muted">Daily command center. Week metrics use the last 7 days. Month metrics use the current server month.</p>
+  </section>
+  <section class="card"><h2>Leads</h2><div class="grid">
+    ${metricCard("New leads today", newLeadsToday)}
+    ${metricCard("New leads last 7 days", newLeadsWeek)}
+    ${metricCard("Open leads", openLeads)}
+    ${metricCard("Converted leads", convertedLeads, "Lead has ticket or invoice")}
+  </div></section>
+  <section class="card"><h2>Tickets / Work Orders</h2><div class="grid">
+    ${metricCard("Open tickets", openTickets)}
+    ${metricCard("Scheduled jobs", scheduledJobs)}
+    ${metricCard("In-progress jobs", inProgressJobs)}
+    ${metricCard("Completed this month", completedThisMonth)}
+    ${metricCard("Tickets needing invoice", ticketsNeedingInvoice)}
+    ${metricCard("Tickets needing review request", ticketsNeedingReview)}
+  </div></section>
+  <section class="card"><h2>Invoices / Revenue</h2><div class="grid">
+    ${metricCard("Draft invoices", draftInvoices)}
+    ${metricCard("Sent/unpaid invoices", sentUnpaidInvoices)}
+    ${metricCard("Paid invoices this month", paidInvoicesThisMonth)}
+    ${metricCard("Paid revenue this month", dollars(paidRevenueCents))}
+    ${metricCard("Open balance", dollars(openBalanceCents))}
+    ${metricCard("Average invoice total", dollars(averageInvoiceCents))}
+  </div></section>
+  <section class="card"><h2>Reviews</h2><div class="grid">
+    ${metricCard("Review requests needed", ticketsNeedingReview)}
+    ${metricCard("Review requests sent", reviewRequestsSent)}
+    ${metricCard("Reviews received", reviewsReceived)}
+  </div></section>
+  <section class="card"><h2>Needs Attention</h2><div class="grid">
+    ${attentionCard("Open leads", openLeads, "/desk/leads")}
+    ${attentionCard("Tickets needing invoice", ticketsNeedingInvoice, "/desk/tickets")}
+    ${attentionCard("Tickets needing review request", ticketsNeedingReview, "/desk/tickets")}
+    ${attentionCard("Sent/unpaid invoices", sentUnpaidInvoices, "/desk/invoices")}
+  </div></section>
+  <section class="card"><h2>Recent Activity</h2>${activityItems.length ? recentActivityTable(activityItems) : `<p class="muted">No recent activity yet.</p>`}</section>`));
 });
 
 app.get("/desk/leads", requireAuth, async (request, response) => {
