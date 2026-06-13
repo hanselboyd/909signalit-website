@@ -20,6 +20,7 @@ const siteUrl = process.env.PUBLIC_SITE_URL || "https://909signalit.com";
 const serviceTermsUrl = "https://909signalit.com/terms.html";
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 const googleReviewLink = process.env.GOOGLE_REVIEW_LINK || "";
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY || "";
 
 const leadStatuses = ["New Lead", "Contacted", "Scheduled", "In Progress", "Waiting on Customer", "Completed", "Invoice Sent", "Closed", "Lost"];
 const ticketStatuses = ["New", "Scheduled", "In Progress", "Waiting on Customer", "Completed", "Closed", "Canceled"];
@@ -122,6 +123,54 @@ function esc(value = "") {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function stripeMode() {
+  if (!stripeSecretKey) return "not configured";
+  if (stripeSecretKey.startsWith("sk_test_")) return "test";
+  if (stripeSecretKey.startsWith("sk_live_")) return "live";
+  return "unknown";
+}
+
+function stripeModeLabel() {
+  const mode = stripeMode();
+  if (mode === "test") return "Stripe test mode";
+  if (mode === "live") return "Stripe live mode";
+  if (mode === "not configured") return "Stripe not configured";
+  return "Stripe mode unknown";
+}
+
+function stripeModeNotice() {
+  const mode = stripeMode();
+  const detail = mode === "test"
+    ? "Payment links use Stripe test keys. Do not send test checkout links to real customers."
+    : mode === "live"
+      ? "Payment links use Stripe live keys. Confirm customer and amount before sending."
+      : mode === "not configured"
+        ? "Stripe keys are missing, so payment links cannot be generated."
+        : "Stripe is configured, but the key prefix is not recognized. Confirm configuration before sending payment links.";
+  return `<section class="card"><h2>Stripe Mode</h2><p><strong>${esc(stripeModeLabel())}</strong></p><p class="muted">${esc(detail)}</p></section>`;
+}
+
+function appearsTestValue(value = "") {
+  const normalized = String(value || "").toLowerCase();
+  return normalized.includes("test") || normalized.includes("demo") || normalized.includes("example.com") || normalized.includes("support@909signalit.com");
+}
+
+function remoteSessionIsTestDemo(session = {}) {
+  return [session.clientName, session.email, session.issueSummary, session.notes, session.customer?.name, session.customer?.email, session.lead?.name, session.lead?.email, session.ticket?.customer?.name, session.ticket?.customer?.email, session.ticket?.lead?.name, session.ticket?.lead?.email].some(appearsTestValue);
+}
+
+function invoiceIsTestDemo(invoice = {}) {
+  return [invoice.customerName, invoice.customerEmail, invoice.notes, invoice.ticket?.customer?.name, invoice.ticket?.customer?.email, invoice.lead?.name, invoice.lead?.email].some(appearsTestValue);
+}
+
+function ticketIsTestDemo(ticket = {}) {
+  return [ticket.title, ticket.issue, ticket.customerNotes, ticket.internalNotes, ticket.customer?.name, ticket.customer?.email, ticket.lead?.name, ticket.lead?.email].some(appearsTestValue);
+}
+
+function testDemoNotice(isTestDemo, context = "record") {
+  return isTestDemo ? `<section class="card warning"><h2>Test/Demo Indicator</h2><p>This ${esc(context)} appears to contain test or demo customer information. Confirm before creating invoices, payment links, or review requests.</p></section>` : "";
 }
 
 function money(value) {
@@ -1059,21 +1108,22 @@ function remoteSessionBillingActions(session) {
   const completed = session.status === "Ended" || session.endedAt || remoteSessionCompletionData(session).actionsTaken;
   const ticket = session.ticket;
   const invoices = ticket?.invoices || [];
+  const testDemo = remoteSessionIsTestDemo(session);
   if (!completed) {
-    return `<section class="card"><h2>Billing and Follow-Up</h2><p class="muted">Complete the Remote Assist session before creating work orders, invoices, payment links, or review requests.</p></section>`;
+    return `${testDemoNotice(testDemo, "Remote Assist session")}<section class="card"><h2>Billing and Follow-Up</h2><p class="muted">Complete the Remote Assist session before creating work orders, invoices, payment links, or review requests.</p></section>`;
   }
   const workOrderAction = ticket
     ? `<a class="button" href="/desk/tickets/${ticket.id}">Update Linked Work Order</a>`
     : `<form method="post" action="/desk/remote-sessions/${session.id}/ticket"><button>Create Work Order from Session</button></form>`;
   const invoiceActions = invoices.length
-    ? invoices.map((invoice) => `<div class="row"><a class="button" href="/desk/invoices/${invoice.id}">Open ${esc(invoice.invoiceNumber)}</a>${invoice.paymentLink ? `<a class="button" href="/desk/invoices/${invoice.id}">Send Payment Link</a>` : `<form method="post" action="/desk/remote-sessions/${session.id}/invoices/${invoice.id}/payment-link"><button>Generate Payment Link</button></form>`}</div>`).join("")
+    ? invoices.map((invoice) => `<div class="row"><a class="button" href="/desk/invoices/${invoice.id}">Open ${esc(invoice.invoiceNumber)}</a>${invoice.paymentLink ? `<a class="button" href="/desk/invoices/${invoice.id}">Send Payment Link</a>` : `<a class="button" href="/desk/remote-sessions/${session.id}/invoices/${invoice.id}/payment-link/confirm">Confirm Payment Link</a>`}</div>`).join("")
     : `<form method="post" action="/desk/remote-sessions/${session.id}/invoice"><button>Create Invoice from Session</button></form>`;
   const reviewAction = ticket
     ? ticket.reviewRequested
       ? `<a class="button" href="/desk/tickets/${ticket.id}">Review Workflow Started</a>`
-      : `<form method="post" action="/desk/remote-sessions/${session.id}/review-requested"><button>Start Review Request</button></form>`
+      : `<a class="button" href="/desk/remote-sessions/${session.id}/review-requested/confirm">Review Request Check</a>`
     : `<p class="muted">Create a work order before starting the review workflow.</p>`;
-  return `<section class="card">
+  return `${testDemoNotice(testDemo, "Remote Assist session")}${stripeModeNotice()}<section class="card">
     <h2>Billing and Follow-Up</h2>
     <p class="muted">Use the existing work order, invoice, Stripe payment link, and review workflow for this completed Remote Assist session.</p>
     <div class="row">${workOrderAction}<form method="post" action="/desk/remote-sessions/${session.id}/ticket-update"><button ${ticket ? "" : "disabled"}>Update Linked Work Order from Session</button></form></div>
@@ -1082,6 +1132,50 @@ function remoteSessionBillingActions(session) {
     <h3>Review</h3>
     ${reviewAction}
   </section>`;
+}
+
+function remotePaymentConfirmationPage(session, invoice) {
+  const lineDescription = invoice.lineItems?.[0]?.description || "Invoice service";
+  return layout("Confirm Payment Link", `${testDemoNotice(remoteSessionIsTestDemo(session) || invoiceIsTestDemo(invoice), "Remote Assist invoice")}${stripeModeNotice()}
+    <section class="card">
+      <h1>Confirm Stripe Payment Link</h1>
+      <p class="muted">Review this before generating a customer-facing Stripe Checkout link.</p>
+      <div class="grid two">
+        <p><strong>Customer:</strong><br>${esc(invoice.customerName)}<br>${esc(invoice.customerEmail || "")}<br>${esc(invoice.customerPhone || "")}</p>
+        <p><strong>Invoice:</strong><br>${esc(invoice.invoiceNumber)}<br>${dollars(invoice.totalCents)}<br>${esc(lineDescription)}</p>
+      </div>
+      <p><strong>Stripe mode:</strong> ${esc(stripeModeLabel())}</p>
+      <div class="row">
+        <form method="post" action="/desk/remote-sessions/${session.id}/invoices/${invoice.id}/payment-link"><button>Confirm and Generate Payment Link</button></form>
+        <a class="button" href="/desk/remote-sessions/${session.id}">Back to Remote Session</a>
+      </div>
+    </section>`);
+}
+
+function remoteReviewWarnings(session) {
+  const ticket = session.ticket;
+  const invoices = ticket?.invoices || [];
+  const unpaidInvoices = invoices.filter((invoice) => !["Paid", "Void", "Refunded"].includes(invoice.status));
+  const warnings = [];
+  if (remoteSessionIsTestDemo(session) || ticketIsTestDemo(ticket)) warnings.push("This appears to be a test/demo session or work order.");
+  if (unpaidInvoices.length) warnings.push(`There are ${unpaidInvoices.length} linked invoice(s) that are not paid yet.`);
+  const hasContact = Boolean(ticket?.customer?.email || ticket?.customer?.phone || ticket?.lead?.email || ticket?.lead?.phone || session.email || session.phone);
+  if (!hasContact) warnings.push("Customer email/phone is missing.");
+  return warnings;
+}
+
+function remoteReviewConfirmationPage(session) {
+  const warnings = remoteReviewWarnings(session);
+  return layout("Confirm Review Request", `${testDemoNotice(remoteSessionIsTestDemo(session) || ticketIsTestDemo(session.ticket), "Remote Assist review request")}
+    <section class="card">
+      <h1>Review Request Check</h1>
+      <p class="muted">Confirm this before starting the review request workflow for the linked work order.</p>
+      ${warnings.length ? `<ul>${warnings.map((warning) => `<li>${esc(warning)}</li>`).join("")}</ul>` : `<p>No review request warnings detected.</p>`}
+      <div class="row">
+        <form method="post" action="/desk/remote-sessions/${session.id}/review-requested"><button>Confirm and Start Review Request</button></form>
+        <a class="button" href="/desk/remote-sessions/${session.id}">Back to Remote Session</a>
+      </div>
+    </section>`);
 }
 
 function remoteSessionSafetyNote() {
@@ -1429,6 +1523,7 @@ function completionSummaryPanel(ticket) {
 
 function ticketWorkOrderPage(ticket) {
   const customerLabel = ticketContactBlock(ticket);
+  const testDemo = ticketIsTestDemo(ticket);
   const linkedInvoices = ticket.invoices?.length
     ? ticket.invoices.map((invoice) => `<a href="/desk/invoices/${invoice.id}">${esc(invoice.invoiceNumber)}</a> (${esc(invoice.status)}, ${dollars(invoice.totalCents)})`).join("<br>")
     : `<span class="muted">No invoices linked yet.</span>`;
@@ -1436,7 +1531,7 @@ function ticketWorkOrderPage(ticket) {
   const requestReview = ["Completed", "Closed"].includes(ticket.status)
     ? ticketReviewRequestSection(ticket)
     : `<section class="card"><h2>Review Follow-Up</h2><p class="muted">Mark the work order completed before requesting a review.</p></section>`;
-  return `<section class="card">
+  return `${testDemoNotice(testDemo, "work order")}<section class="card">
       <div class="row">
         <h1>${esc(ticket.ticketNumber)}</h1>
         <form method="post" action="/desk/tickets/${ticket.id}/status"><input type="hidden" name="status" value="Scheduled"><button>Mark Scheduled</button></form>
@@ -2431,6 +2526,24 @@ app.post("/desk/remote-sessions/:id/invoice", requireAuth, async (request, respo
   response.redirect(`/desk/invoices/${invoice.id}`);
 });
 
+app.get("/desk/remote-sessions/:id/invoices/:invoiceId/payment-link/confirm", requireAuth, async (request, response) => {
+  const session = await prisma.remoteSession.findUnique({
+    where: { id: request.params.id },
+    include: { ticket: { include: { invoices: true, customer: true, lead: true } }, customer: true, lead: true }
+  });
+  if (!session) return response.redirect("/desk/remote-sessions");
+  const invoice = await prisma.invoice.findUnique({
+    where: { id: Number(request.params.invoiceId) },
+    include: { lineItems: true, customer: true, lead: true, ticket: { include: { customer: true, lead: true } } }
+  });
+  if (!invoice) return response.redirect(`/desk/remote-sessions/${request.params.id}`);
+  await prisma.remoteSession.update({
+    where: { id: session.id },
+    data: { notes: appendRemoteAudit(session.notes, "Payment link confirmation shown", `${stripeModeLabel()} for invoice ${invoice.invoiceNumber}`) }
+  });
+  response.send(remotePaymentConfirmationPage(session, invoice));
+});
+
 app.post("/desk/remote-sessions/:id/invoices/:invoiceId/payment-link", requireAuth, async (request, response) => {
   const session = await prisma.remoteSession.findUnique({ where: { id: request.params.id } });
   if (!session) return response.redirect("/desk/remote-sessions");
@@ -2439,12 +2552,13 @@ app.post("/desk/remote-sessions/:id/invoices/:invoiceId/payment-link", requireAu
     include: { lineItems: true }
   });
   if (!invoice) return response.redirect(`/desk/remote-sessions/${request.params.id}`);
+  const confirmedNotes = appendRemoteAudit(session.notes, "Payment link confirmation accepted", `${stripeModeLabel()} for invoice ${invoice.invoiceNumber}`);
   try {
     const result = await generateInvoiceCheckoutSession(invoice);
     if (result.error) {
       await prisma.remoteSession.update({
         where: { id: session.id },
-        data: { notes: appendRemoteAudit(session.notes, "Payment link failed", `Invoice ${invoice.invoiceNumber} payment link was not generated`) }
+        data: { notes: appendRemoteAudit(confirmedNotes, "Payment link failed", `${stripeModeLabel()} - invoice ${invoice.invoiceNumber} payment link was not generated`) }
       });
       response.redirect(`/desk/invoices/${invoice.id}?stripe=${stripe ? "error" : "missing"}`);
       return;
@@ -2460,21 +2574,35 @@ app.post("/desk/remote-sessions/:id/invoices/:invoiceId/payment-link", requireAu
     });
     await prisma.remoteSession.update({
       where: { id: session.id },
-      data: { notes: appendRemoteAudit(session.notes, "Payment link sent", `Stripe payment link generated for invoice ${invoice.invoiceNumber}`) }
+      data: { notes: appendRemoteAudit(confirmedNotes, "Payment link generated", `${stripeModeLabel()} - Stripe payment link generated for invoice ${invoice.invoiceNumber}`) }
     });
     response.redirect(`/desk/invoices/${invoice.id}`);
   } catch (error) {
     console.error(error);
     await prisma.remoteSession.update({
       where: { id: session.id },
-      data: { notes: appendRemoteAudit(session.notes, "Payment link failed", `Invoice ${invoice.invoiceNumber} payment link generation failed`) }
+      data: { notes: appendRemoteAudit(confirmedNotes, "Payment link failed", `${stripeModeLabel()} - invoice ${invoice.invoiceNumber} payment link generation failed`) }
     });
     response.redirect(`/desk/invoices/${invoice.id}?stripe=error`);
   }
 });
 
+app.get("/desk/remote-sessions/:id/review-requested/confirm", requireAuth, async (request, response) => {
+  const session = await prisma.remoteSession.findUnique({
+    where: { id: request.params.id },
+    include: { ticket: { include: { invoices: true, customer: true, lead: true } }, customer: true, lead: true }
+  });
+  if (!session) return response.redirect("/desk/remote-sessions");
+  if (!session.ticketId || !session.ticket) return response.redirect(`/desk/remote-sessions/${request.params.id}`);
+  await prisma.remoteSession.update({
+    where: { id: session.id },
+    data: { notes: appendRemoteAudit(session.notes, "Review request warning shown", remoteReviewWarnings(session).join("; ") || "No warnings detected") }
+  });
+  response.send(remoteReviewConfirmationPage(session));
+});
+
 app.post("/desk/remote-sessions/:id/review-requested", requireAuth, async (request, response) => {
-  const session = await prisma.remoteSession.findUnique({ where: { id: request.params.id }, include: { ticket: true } });
+  const session = await prisma.remoteSession.findUnique({ where: { id: request.params.id }, include: { ticket: { include: { invoices: true, customer: true, lead: true } }, customer: true, lead: true } });
   if (!session) return response.redirect("/desk/remote-sessions");
   if (!session.ticketId || !session.ticket) return response.redirect(`/desk/remote-sessions/${request.params.id}`);
   await prisma.ticket.update({
@@ -2483,7 +2611,7 @@ app.post("/desk/remote-sessions/:id/review-requested", requireAuth, async (reque
   });
   await prisma.remoteSession.update({
     where: { id: session.id },
-    data: { notes: appendRemoteAudit(session.notes, "Review workflow started", `Review requested for ticket ${session.ticket.ticketNumber}`) }
+    data: { notes: appendRemoteAudit(session.notes, "Review workflow started", `Review warnings accepted; review requested for ticket ${session.ticket.ticketNumber}`) }
   });
   response.redirect(`/desk/tickets/${session.ticketId}`);
 });
@@ -3073,9 +3201,10 @@ app.get("/desk/invoices/:id", requireAuth, async (request, response) => {
   const paidReviewPrompt = invoice.status === "Paid"
     ? `<section class="card"><h2>Review Follow-Up</h2><p>Payment received. If this job is complete, request a Google review from the related ticket.</p>${invoice.ticket ? `<a class="button" href="/desk/tickets/${invoice.ticket.id}">Open Ticket</a>` : `<p class="muted">No related ticket is linked to this invoice.</p>`}</section>`
     : "";
+  const testDemoWarning = testDemoNotice(invoiceIsTestDemo(invoice), "invoice");
   const invoiceTerms = `<section class="card"><h2>Invoice Terms</h2><p class="muted">Payment is due upon completion unless otherwise agreed in writing. Client is responsible for data backups, passwords, software licenses, account access, and third-party service availability. 909 Signal IT is not responsible for pre-existing issues, data loss, failed hardware, unsupported software, ISP/vendor outages, or indirect business losses. Labor warranty applies only to the specific issue serviced for 7 days. Full service terms apply.</p><p><a href="${serviceTermsUrl}" target="_blank" rel="noopener">${serviceTermsUrl}</a></p></section>`;
   const lineRows = invoice.lineItems.map((item) => `<tr><td>${esc(item.description)}</td><td>${item.quantity}</td><td>${dollars(item.unitPriceCents)}</td><td>${dollars(item.lineTotalCents)}</td></tr>`).join("");
-  response.send(layout(invoice.invoiceNumber, `${notice}${stripeMessage}
+  response.send(layout(invoice.invoiceNumber, `${notice}${stripeMessage}${testDemoWarning}${stripeModeNotice()}
     <section class="card">
       <div class="row"><h1>${esc(invoice.invoiceNumber)}</h1><a class="button" href="/desk/expenses/new?invoiceId=${invoice.id}">Add Expense for Invoice</a><a class="button" href="/desk/invoices">Invoices</a></div>
       <p><strong>${esc(invoice.customerName)}</strong><br>${esc(invoice.customerEmail || "")}<br>${esc(invoice.customerPhone || "")}</p>
@@ -3093,6 +3222,7 @@ app.get("/desk/invoices/:id", requireAuth, async (request, response) => {
       <form method="post" action="/desk/invoices/${invoice.id}/payment-link">
         <h2>Payment</h2>
         <p class="muted">Generate a Stripe-hosted Checkout link for this invoice.</p>
+        <p class="muted"><strong>${esc(stripeModeLabel())}</strong></p>
         <p class="muted">By paying, client agrees to the <a href="${serviceTermsUrl}" target="_blank" rel="noopener">909 Signal IT Service Terms</a>.</p>
         <button>Generate Payment Link</button>
       </form>
