@@ -1017,6 +1017,73 @@ function remoteSessionCompletionSummary(session) {
   return `<section class="card"><h2>Completion Record</h2><p class="muted">Saved ${esc(match[1])}</p>${rows}</section>`;
 }
 
+function remoteSessionCompletionData(session) {
+  const notes = String(session.notes || "");
+  const match = notes.match(/\[Remote Session Completion ([^\]]+)\]([\s\S]*?)(?=\n\n\[Remote |\n\[Remote Audit |\s*$)/);
+  const data = {
+    issueWorkedOn: session.issueSummary || "",
+    actionsTaken: "",
+    outcome: "",
+    recommendedNextSteps: "",
+    followUpNeeded: "No",
+    workOrderAction: "No action needed"
+  };
+  if (!match) return data;
+  match[2].trim().split("\n").forEach((line) => {
+    const [label, ...rest] = line.split(":");
+    const value = rest.join(":").trim();
+    if (label === "Issue worked on") data.issueWorkedOn = value;
+    if (label === "Actions taken") data.actionsTaken = value;
+    if (label === "Outcome") data.outcome = value;
+    if (label === "Recommended next steps") data.recommendedNextSteps = value;
+    if (label === "Follow-up needed") data.followUpNeeded = value;
+    if (label === "Invoice/work order action") data.workOrderAction = value;
+  });
+  return data;
+}
+
+function remoteSessionWorkOrderSummary(session) {
+  const completion = remoteSessionCompletionData(session);
+  return [
+    `Remote Assist session ${session.sessionCode}`,
+    `Session date: ${displayDateTime(session.endedAt || session.liveViewEndedAt || session.createdAt)}`,
+    `Issue worked on: ${completion.issueWorkedOn || "Not listed"}`,
+    `Actions taken: ${completion.actionsTaken || "Not listed"}`,
+    `Outcome: ${completion.outcome || "Not listed"}`,
+    `Recommended next steps: ${completion.recommendedNextSteps || "Not listed"}`,
+    `Follow-up needed: ${completion.followUpNeeded || "No"}`
+  ].join("\n");
+}
+
+function remoteSessionBillingActions(session) {
+  const completed = session.status === "Ended" || session.endedAt || remoteSessionCompletionData(session).actionsTaken;
+  const ticket = session.ticket;
+  const invoices = ticket?.invoices || [];
+  if (!completed) {
+    return `<section class="card"><h2>Billing and Follow-Up</h2><p class="muted">Complete the Remote Assist session before creating work orders, invoices, payment links, or review requests.</p></section>`;
+  }
+  const workOrderAction = ticket
+    ? `<a class="button" href="/desk/tickets/${ticket.id}">Update Linked Work Order</a>`
+    : `<form method="post" action="/desk/remote-sessions/${session.id}/ticket"><button>Create Work Order from Session</button></form>`;
+  const invoiceActions = invoices.length
+    ? invoices.map((invoice) => `<div class="row"><a class="button" href="/desk/invoices/${invoice.id}">Open ${esc(invoice.invoiceNumber)}</a>${invoice.paymentLink ? `<a class="button" href="/desk/invoices/${invoice.id}">Send Payment Link</a>` : `<form method="post" action="/desk/remote-sessions/${session.id}/invoices/${invoice.id}/payment-link"><button>Generate Payment Link</button></form>`}</div>`).join("")
+    : `<form method="post" action="/desk/remote-sessions/${session.id}/invoice"><button>Create Invoice from Session</button></form>`;
+  const reviewAction = ticket
+    ? ticket.reviewRequested
+      ? `<a class="button" href="/desk/tickets/${ticket.id}">Review Workflow Started</a>`
+      : `<form method="post" action="/desk/remote-sessions/${session.id}/review-requested"><button>Start Review Request</button></form>`
+    : `<p class="muted">Create a work order before starting the review workflow.</p>`;
+  return `<section class="card">
+    <h2>Billing and Follow-Up</h2>
+    <p class="muted">Use the existing work order, invoice, Stripe payment link, and review workflow for this completed Remote Assist session.</p>
+    <div class="row">${workOrderAction}<form method="post" action="/desk/remote-sessions/${session.id}/ticket-update"><button ${ticket ? "" : "disabled"}>Update Linked Work Order from Session</button></form></div>
+    <h3>Invoices and Payment</h3>
+    ${invoiceActions}
+    <h3>Review</h3>
+    ${reviewAction}
+  </section>`;
+}
+
 function remoteSessionSafetyNote() {
   return `<section class="card warning"><h2>Internal Safety Note</h2><p>Remote sessions require customer consent. Do not ask customers to expose passwords, banking pages, private documents, or sensitive personal information during screen sharing. The customer can stop sharing at any time.</p></section>`;
 }
@@ -2100,7 +2167,7 @@ app.get("/desk/remote-sessions", requireAuth, async (request, response) => {
 app.get("/desk/remote-sessions/:id", requireAuth, async (request, response) => {
   const session = await prisma.remoteSession.findUnique({
     where: { id: request.params.id },
-    include: { ticket: true, customer: true, lead: true }
+    include: { ticket: { include: { invoices: true, customer: true, lead: true } }, customer: true, lead: true }
   });
   if (!session) return response.status(404).send(layout("Remote session not found", "<section class='card'>Remote session not found.</section>"));
   const deliveryStatus = request.query.email === "sent"
@@ -2128,6 +2195,7 @@ app.get("/desk/remote-sessions/:id", requireAuth, async (request, response) => {
   </section>
   ${deliveryStatus}
   <section class="card"><h2>Customer Link Delivery</h2><p class="muted">Send or copy the customer-facing Remote Assist link. This is the public consent/session page, not the technician view.</p>${remoteSessionDeliveryActions(session)}</section>
+  ${remoteSessionBillingActions(session)}
   <section class="card"><h2>Remote Assist Activity</h2>${remoteSessionActivityTable(session)}</section>
   ${remoteSessionCompletionSummary(session)}
   <form method="post" action="/desk/remote-sessions/${session.id}/update">
@@ -2239,6 +2307,7 @@ app.post("/desk/remote-sessions/:id/ticket", requireAuth, async (request, respon
   const session = await prisma.remoteSession.findUnique({ where: { id: request.params.id } });
   if (!session) return response.redirect("/desk/remote-sessions");
   if (session.ticketId) return response.redirect(`/desk/tickets/${session.ticketId}`);
+  const completion = remoteSessionCompletionData(session);
   const ticket = await prisma.ticket.create({
     data: {
       ticketNumber: `909-${Date.now()}`,
@@ -2246,13 +2315,177 @@ app.post("/desk/remote-sessions/:id/ticket", requireAuth, async (request, respon
       leadId: session.leadId,
       title: "Remote IT Support",
       serviceType: "Remote IT Support",
-      issue: session.issueSummary,
-      customerNotes: `Remote Assist session ${session.sessionCode}`,
-      status: "New"
+      issue: completion.issueWorkedOn || session.issueSummary,
+      diagnosis: completion.outcome || null,
+      workPerformed: completion.actionsTaken || null,
+      customerNotes: remoteSessionWorkOrderSummary(session),
+      internalNotes: `Created from Remote Assist session ${session.sessionCode}`,
+      recommendedNextSteps: completion.recommendedNextSteps || null,
+      appointmentAt: session.startedAt || session.liveViewStartedAt || session.createdAt,
+      completedAt: session.endedAt || session.liveViewEndedAt || null,
+      status: session.status === "Ended" || session.endedAt ? "Completed" : "New"
     }
   });
-  await prisma.remoteSession.update({ where: { id: session.id }, data: { ticketId: ticket.id, notes: appendRemoteAudit(session.notes, "Ticket created", `Ticket ${ticket.ticketNumber} created from Remote Assist session`) } });
+  await prisma.remoteSession.update({ where: { id: session.id }, data: { ticketId: ticket.id, notes: appendRemoteAudit(session.notes, "Work order created from session", `Ticket ${ticket.ticketNumber} created`) } });
   response.redirect(`/desk/tickets/${ticket.id}`);
+});
+
+app.post("/desk/remote-sessions/:id/ticket-update", requireAuth, async (request, response) => {
+  const session = await prisma.remoteSession.findUnique({ where: { id: request.params.id }, include: { ticket: true } });
+  if (!session) return response.redirect("/desk/remote-sessions");
+  if (!session.ticketId || !session.ticket) return response.redirect(`/desk/remote-sessions/${request.params.id}`);
+  const completion = remoteSessionCompletionData(session);
+  await prisma.ticket.update({
+    where: { id: session.ticketId },
+    data: {
+      serviceType: "Remote IT Support",
+      issue: completion.issueWorkedOn || session.issueSummary || session.ticket.issue,
+      diagnosis: completion.outcome || session.ticket.diagnosis,
+      workPerformed: completion.actionsTaken || session.ticket.workPerformed,
+      customerNotes: remoteSessionWorkOrderSummary(session),
+      internalNotes: [session.ticket.internalNotes, `Updated from Remote Assist session ${session.sessionCode}`].filter(Boolean).join("\n\n"),
+      recommendedNextSteps: completion.recommendedNextSteps || session.ticket.recommendedNextSteps,
+      appointmentAt: session.ticket.appointmentAt || session.startedAt || session.liveViewStartedAt || session.createdAt,
+      completedAt: session.ticket.completedAt || session.endedAt || session.liveViewEndedAt || null,
+      status: session.status === "Ended" || session.endedAt ? "Completed" : session.ticket.status
+    }
+  });
+  await prisma.remoteSession.update({
+    where: { id: session.id },
+    data: { notes: appendRemoteAudit(session.notes, "Linked work order updated", `Ticket ${session.ticket.ticketNumber} updated from Remote Assist completion`) }
+  });
+  response.redirect(`/desk/tickets/${session.ticketId}`);
+});
+
+app.post("/desk/remote-sessions/:id/invoice", requireAuth, async (request, response) => {
+  const session = await prisma.remoteSession.findUnique({
+    where: { id: request.params.id },
+    include: { ticket: { include: { customer: true, lead: true } }, customer: true, lead: true }
+  });
+  if (!session) return response.redirect("/desk/remote-sessions");
+  const completion = remoteSessionCompletionData(session);
+  let ticket = session.ticket;
+  let auditNotes = session.notes;
+  if (!ticket) {
+    ticket = await prisma.ticket.create({
+      data: {
+        ticketNumber: `909-${Date.now()}`,
+        customerId: session.customerId,
+        leadId: session.leadId,
+        title: "Remote IT Support",
+        serviceType: "Remote IT Support",
+        issue: completion.issueWorkedOn || session.issueSummary,
+        diagnosis: completion.outcome || null,
+        workPerformed: completion.actionsTaken || null,
+        customerNotes: remoteSessionWorkOrderSummary(session),
+        internalNotes: `Created from Remote Assist session ${session.sessionCode} before invoice generation`,
+        recommendedNextSteps: completion.recommendedNextSteps || null,
+        appointmentAt: session.startedAt || session.liveViewStartedAt || session.createdAt,
+        completedAt: session.endedAt || session.liveViewEndedAt || null,
+        status: "Completed"
+      }
+    });
+    auditNotes = appendRemoteAudit(auditNotes, "Work order created from session", `Ticket ${ticket.ticketNumber} created before invoice generation`);
+  }
+  const remoteService = standardServiceMenu.find((service) => service.name === "Remote IT Support");
+  const priceCents = remoteService?.priceCents || 0;
+  const customerName = session.ticket?.customer?.name || session.customer?.name || session.ticket?.lead?.name || session.lead?.name || session.clientName || "Customer";
+  const customerEmail = session.ticket?.customer?.email || session.customer?.email || session.ticket?.lead?.email || session.lead?.email || session.email || null;
+  const customerPhone = session.ticket?.customer?.phone || session.customer?.phone || session.ticket?.lead?.phone || session.lead?.phone || session.phone || null;
+  const description = `Remote IT Support - Session ${session.sessionCode}`;
+  const invoice = await prisma.invoice.create({
+    data: {
+      invoiceNumber: await nextInvoiceNumber(),
+      customerId: ticket.customerId || session.customerId || null,
+      leadId: ticket.leadId || session.leadId || null,
+      ticketId: ticket.id,
+      customerName,
+      customerEmail,
+      customerPhone,
+      subtotalCents: priceCents,
+      taxCents: 0,
+      discountCents: 0,
+      totalCents: priceCents,
+      notes: [
+        description,
+        `Session date: ${displayDateTime(session.endedAt || session.liveViewEndedAt || session.createdAt)}`,
+        completion.actionsTaken ? `Actions taken: ${completion.actionsTaken}` : "",
+        completion.outcome ? `Outcome: ${completion.outcome}` : "",
+        completion.recommendedNextSteps ? `Next steps: ${completion.recommendedNextSteps}` : ""
+      ].filter(Boolean).join("\n"),
+      status: "Draft",
+      lineItems: {
+        create: [{
+          description,
+          quantity: 1,
+          unitPriceCents: priceCents,
+          lineTotalCents: priceCents
+        }]
+      }
+    }
+  });
+  await prisma.remoteSession.update({
+    where: { id: session.id },
+    data: { ticketId: ticket.id, notes: appendRemoteAudit(auditNotes, "Invoice created from session", `Invoice ${invoice.invoiceNumber} created`) }
+  });
+  response.redirect(`/desk/invoices/${invoice.id}`);
+});
+
+app.post("/desk/remote-sessions/:id/invoices/:invoiceId/payment-link", requireAuth, async (request, response) => {
+  const session = await prisma.remoteSession.findUnique({ where: { id: request.params.id } });
+  if (!session) return response.redirect("/desk/remote-sessions");
+  const invoice = await prisma.invoice.findUnique({
+    where: { id: Number(request.params.invoiceId) },
+    include: { lineItems: true }
+  });
+  if (!invoice) return response.redirect(`/desk/remote-sessions/${request.params.id}`);
+  try {
+    const result = await generateInvoiceCheckoutSession(invoice);
+    if (result.error) {
+      await prisma.remoteSession.update({
+        where: { id: session.id },
+        data: { notes: appendRemoteAudit(session.notes, "Payment link failed", `Invoice ${invoice.invoiceNumber} payment link was not generated`) }
+      });
+      response.redirect(`/desk/invoices/${invoice.id}?stripe=${stripe ? "error" : "missing"}`);
+      return;
+    }
+    await prisma.invoice.update({
+      where: { id: invoice.id },
+      data: {
+        paymentLink: result.session.url,
+        stripeCheckoutSessionId: result.session.id,
+        status: invoice.status === "Draft" ? "Sent" : invoice.status,
+        sentAt: invoice.sentAt || new Date()
+      }
+    });
+    await prisma.remoteSession.update({
+      where: { id: session.id },
+      data: { notes: appendRemoteAudit(session.notes, "Payment link sent", `Stripe payment link generated for invoice ${invoice.invoiceNumber}`) }
+    });
+    response.redirect(`/desk/invoices/${invoice.id}`);
+  } catch (error) {
+    console.error(error);
+    await prisma.remoteSession.update({
+      where: { id: session.id },
+      data: { notes: appendRemoteAudit(session.notes, "Payment link failed", `Invoice ${invoice.invoiceNumber} payment link generation failed`) }
+    });
+    response.redirect(`/desk/invoices/${invoice.id}?stripe=error`);
+  }
+});
+
+app.post("/desk/remote-sessions/:id/review-requested", requireAuth, async (request, response) => {
+  const session = await prisma.remoteSession.findUnique({ where: { id: request.params.id }, include: { ticket: true } });
+  if (!session) return response.redirect("/desk/remote-sessions");
+  if (!session.ticketId || !session.ticket) return response.redirect(`/desk/remote-sessions/${request.params.id}`);
+  await prisma.ticket.update({
+    where: { id: session.ticketId },
+    data: { reviewRequested: true }
+  });
+  await prisma.remoteSession.update({
+    where: { id: session.id },
+    data: { notes: appendRemoteAudit(session.notes, "Review workflow started", `Review requested for ticket ${session.ticket.ticketNumber}`) }
+  });
+  response.redirect(`/desk/tickets/${session.ticketId}`);
 });
 
 app.get("/desk/reports", requireAuth, async (request, response) => {
