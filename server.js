@@ -8,7 +8,7 @@ import { createServer } from "node:http";
 import { extname, join } from "node:path";
 import { URL } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
-import { isLeadNotificationConfigured, sendLeadCustomerAcknowledgement, sendLeadNotification } from "./src/server/email.js";
+import { isLeadNotificationConfigured, sendLeadCustomerAcknowledgement, sendLeadNotification, sendRemoteAssistLinkEmail } from "./src/server/email.js";
 
 const app = express();
 const server = createServer(app);
@@ -926,8 +926,8 @@ function technicianLiveViewPage(session) {
 }
 
 function remoteSessionTable(sessions) {
-  return `<table><thead><tr><th>Session</th><th>Client</th><th>Phone</th><th>Device</th><th>Status</th><th>Live View</th><th>Consent</th><th>Linked</th><th>Created</th><th>Started</th><th>Ended</th><th></th></tr></thead><tbody>${sessions.map((session) => `
-    <tr><td><a href="/desk/remote-sessions/${session.id}">${esc(session.sessionCode)}</a></td><td>${esc(session.clientName)}</td><td>${esc(session.phone)}</td><td>${esc(session.deviceType || "")}</td><td>${esc(session.status)}</td><td>${esc(session.liveViewStatus || "Not Started")}</td><td>${session.consentAccepted ? `Accepted ${displayDateTime(session.consentAcceptedAt)}` : "Not accepted"}</td><td>${remoteSessionLinkSummary(session)}</td><td>${displayDateTime(session.createdAt)}</td><td>${displayDateTime(session.startedAt || session.liveViewStartedAt)}</td><td>${displayDateTime(session.endedAt || session.liveViewEndedAt)}</td><td><a href="/desk/remote-sessions/${session.id}">View</a></td></tr>`).join("") || `<tr><td colspan="12">No remote sessions found.</td></tr>`}</tbody></table>`;
+  return `<table><thead><tr><th>Session</th><th>Client</th><th>Phone</th><th>Device</th><th>Status</th><th>Live View</th><th>Consent</th><th>Linked</th><th>Created</th><th>Started</th><th>Ended</th><th>Delivery</th></tr></thead><tbody>${sessions.map((session) => `
+    <tr><td><a href="/desk/remote-sessions/${session.id}">${esc(session.sessionCode)}</a></td><td>${esc(session.clientName)}</td><td>${esc(session.phone)}</td><td>${esc(session.deviceType || "")}</td><td>${esc(session.status)}</td><td>${esc(session.liveViewStatus || "Not Started")}</td><td>${session.consentAccepted ? `Accepted ${displayDateTime(session.consentAcceptedAt)}` : "Not accepted"}</td><td>${remoteSessionLinkSummary(session)}</td><td>${displayDateTime(session.createdAt)}</td><td>${displayDateTime(session.startedAt || session.liveViewStartedAt)}</td><td>${displayDateTime(session.endedAt || session.liveViewEndedAt)}</td><td>${remoteSessionDeliveryActions(session, true)}</td></tr>`).join("") || `<tr><td colspan="12">No remote sessions found.</td></tr>`}</tbody></table>`;
 }
 
 function remoteSessionLinkSummary(session) {
@@ -936,6 +936,27 @@ function remoteSessionLinkSummary(session) {
     session.ticket ? `<a href="/desk/tickets/${session.ticket.id}">${esc(session.ticket.ticketNumber)}</a>` : "",
     session.lead ? `<a href="/desk/leads/${session.lead.id}">${esc(session.lead.name)}</a>` : ""
   ].filter(Boolean).join("<br>") || `<span class="muted">No linked CRM records.</span>`;
+}
+
+function remoteSessionCustomerLink(session) {
+  return `${siteUrl}/remote/live/${session.sessionCode}`;
+}
+
+function remoteSessionManualMessage(session) {
+  const name = session.clientName || "there";
+  return `Hi ${name}, this is 909 Signal IT. Please open this secure Remote Assist link when you are ready: ${remoteSessionCustomerLink(session)}. Before sharing your screen, please close passwords, banking pages, medical records, or private documents. You can stop sharing at any time.`;
+}
+
+function remoteSessionDeliveryActions(session, compact = false) {
+  const linkId = `remote-customer-link-${session.id}`;
+  const messageId = `remote-customer-message-${session.id}`;
+  const emailAction = session.email
+    ? `<form method="post" action="/desk/remote-sessions/${session.id}/email-link"><button>Email Remote Assist Link</button></form>`
+    : `<span class="muted">No customer email.</span>`;
+  const manualMessage = compact
+    ? `<a href="/desk/remote-sessions/${session.id}">Manual message</a>`
+    : `<label>Manual text/SMS message <textarea id="${esc(messageId)}" readonly>${esc(remoteSessionManualMessage(session))}</textarea></label><button class="button" type="button" data-copy-target="${esc(messageId)}">Copy Manual Message</button>`;
+  return `<div class="row"><input id="${esc(linkId)}" class="copy-source" value="${esc(remoteSessionCustomerLink(session))}" readonly><button class="button" type="button" data-copy-target="${esc(linkId)}">Copy Customer Link</button>${emailAction}</div>${manualMessage}`;
 }
 
 function remoteSessionSafetyNote() {
@@ -1364,7 +1385,8 @@ function ticketWorkOrderPage(ticket) {
     <section class="card"><h2>Remote Sessions</h2>${remoteSessionTable(ticket.remoteSessions || [])}</section>
     <section class="card"><h2>Related Expenses</h2>${compactExpenseTable(ticketExpenses, "No expenses connected to this ticket yet.")}</section>
     ${completionSummaryPanel(ticket)}
-    ${requestReview}`;
+    ${requestReview}
+    ${copyScript()}`;
 }
 
 function invoiceForm(action, values = {}, message = "") {
@@ -2011,7 +2033,7 @@ app.get("/desk/remote-sessions", requireAuth, async (request, response) => {
     include: { ticket: true, customer: true, lead: true },
     orderBy: { createdAt: "desc" }
   });
-  response.send(layout("Remote Sessions", `<section class="card"><div class="row"><h1>Remote Sessions</h1><a class="button" href="/remote" target="_blank" rel="noopener">Open Client Portal</a></div><p class="muted">Consent-first tracking for 909 Signal Remote Assist. No hidden, unattended, or stealth access is provided.</p><form method="get" class="row"><label>Status <select name="status"><option value="">All statuses</option>${statusOptions(remoteSessionStatuses, status)}</select></label><button>Filter</button></form></section>${remoteSessionSafetyNote()}${remoteSessionTable(sessions)}`));
+  response.send(layout("Remote Sessions", `<section class="card"><div class="row"><h1>Remote Sessions</h1><a class="button" href="/remote" target="_blank" rel="noopener">Open Client Portal</a></div><p class="muted">Consent-first tracking for 909 Signal Remote Assist. No hidden, unattended, or stealth access is provided.</p><form method="get" class="row"><label>Status <select name="status"><option value="">All statuses</option>${statusOptions(remoteSessionStatuses, status)}</select></label><button>Filter</button></form></section>${remoteSessionSafetyNote()}${remoteSessionTable(sessions)}${copyScript()}`));
 });
 
 app.get("/desk/remote-sessions/:id", requireAuth, async (request, response) => {
@@ -2020,6 +2042,13 @@ app.get("/desk/remote-sessions/:id", requireAuth, async (request, response) => {
     include: { ticket: true, customer: true, lead: true }
   });
   if (!session) return response.status(404).send(layout("Remote session not found", "<section class='card'>Remote session not found.</section>"));
+  const deliveryStatus = request.query.email === "sent"
+    ? `<section class="card"><p><strong>Remote Assist link email sent.</strong></p></section>`
+    : request.query.email === "skipped"
+      ? `<section class="card"><p class="danger">Remote Assist link email was skipped because no customer email or email configuration was available.</p></section>`
+      : request.query.email === "failed"
+        ? `<section class="card"><p class="danger">Remote Assist link email could not be sent. The session was not changed.</p></section>`
+        : "";
   response.send(layout(session.sessionCode, `<section class="card">
     <div class="row"><h1>${esc(session.sessionCode)}</h1><a class="button" href="/desk/remote-sessions">Back to Remote Sessions</a></div>
     ${remoteSessionDetailGrid(session)}
@@ -2030,13 +2059,14 @@ app.get("/desk/remote-sessions/:id", requireAuth, async (request, response) => {
   ${remoteSessionSafetyNote()}
   <section class="card row">
     <a class="button" href="/desk/remote-sessions/${session.id}/live">Open Live View</a>
-    ${copyInlineButton(`remote-live-link-${session.id}`, `${siteUrl}/remote/live/${session.sessionCode}`, "Copy Client Live View Link")}
     <form method="post" action="/desk/remote-sessions/${session.id}/status"><input type="hidden" name="status" value="Approved"><button>Approve Session</button></form>
     <form method="post" action="/desk/remote-sessions/${session.id}/status"><input type="hidden" name="status" value="Active"><button>Mark Active</button></form>
     <form method="post" action="/desk/remote-sessions/${session.id}/status"><input type="hidden" name="status" value="Ended"><button>Mark Ended</button></form>
     <form method="post" action="/desk/remote-sessions/${session.id}/status"><input type="hidden" name="status" value="Cancelled"><button>Cancel Session</button></form>
     <form method="post" action="/desk/remote-sessions/${session.id}/ticket"><button>Create Ticket from Remote Session</button></form>
   </section>
+  ${deliveryStatus}
+  <section class="card"><h2>Customer Link Delivery</h2><p class="muted">Send or copy the customer-facing Remote Assist link. This is the public consent/session page, not the technician view.</p>${remoteSessionDeliveryActions(session)}</section>
   <form method="post" action="/desk/remote-sessions/${session.id}/update">
     <h2>Technician Notes</h2>
     <p class="muted">Do not store client passwords or sensitive personal information in session notes.</p>
@@ -2077,6 +2107,24 @@ app.post("/desk/remote-sessions/:id/update", requireAuth, async (request, respon
     }
   });
   response.redirect(`/desk/remote-sessions/${request.params.id}`);
+});
+
+app.post("/desk/remote-sessions/:id/email-link", requireAuth, async (request, response) => {
+  const session = await prisma.remoteSession.findUnique({ where: { id: request.params.id } });
+  if (!session) return response.redirect("/desk/remote-sessions");
+  try {
+    const result = await sendRemoteAssistLinkEmail(session, remoteSessionCustomerLink(session));
+    if (result?.skipped) {
+      console.warn("Remote Assist link email skipped:", { sessionId: session.id, hasEmail: Boolean(session.email) });
+      response.redirect(`/desk/remote-sessions/${request.params.id}?email=skipped`);
+      return;
+    }
+    console.log("Remote Assist link email sent:", { sessionId: session.id });
+    response.redirect(`/desk/remote-sessions/${request.params.id}?email=sent`);
+  } catch (error) {
+    console.error("Remote Assist link email failed:", error?.message || error);
+    response.redirect(`/desk/remote-sessions/${request.params.id}?email=failed`);
+  }
 });
 
 app.post("/desk/remote-sessions/:id/complete", requireAuth, async (request, response) => {
@@ -2518,7 +2566,7 @@ app.get("/desk/customers/:id", requireAuth, async (request, response) => {
     <section class="card"><h2>Related Invoices</h2>${customerInvoiceHistoryTable(customer.invoices)}</section>
     <section class="card"><h2>Related Expenses</h2>${compactExpenseTable(customer.expenses, "No expenses for this customer yet.")}</section>
     <section class="card"><h2>Related Leads</h2>${relatedLeadHistoryTable(relatedLeads)}</section>
-    <section class="card"><h2>Recent Activity</h2>${customerRecentActivity(customer.tickets, customer.invoices)}</section>`));
+    <section class="card"><h2>Recent Activity</h2>${customerRecentActivity(customer.tickets, customer.invoices)}</section>${copyScript()}`));
 });
 
 app.get("/desk/customers/:id/summary", requireAuth, async (request, response) => {
