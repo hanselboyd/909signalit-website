@@ -171,8 +171,11 @@ export async function sendRemoteAssistCloseoutEmail(closeout) {
     : closeout.invoiceNumber
       ? ["", `Invoice: ${closeout.invoiceNumber}`]
       : [];
-  const reviewSection = closeout.reviewRequested
-    ? ["", "Review request:", "A review request has been started. Thank you for helping other local customers find reliable IT support."]
+  const reviewUrl = closeout.googleReviewUrl || "";
+  const reviewSection = closeout.reviewRequested && reviewUrl
+    ? ["", "Review request:", "If the service helped, an honest review would help nearby customers find reliable local IT support.", reviewUrl]
+    : closeout.reviewRequested
+      ? ["", "Review request:", "A review request has been started. Thank you for helping other local customers find reliable IT support."]
     : [];
   const text = [
     `Hi ${customerName},`,
@@ -205,7 +208,8 @@ export async function sendRemoteAssistCloseoutEmail(closeout) {
     </ul>
     ${closeout.paymentLink ? `<p><strong>Invoice/payment link:</strong><br><a href="${htmlEscape(closeout.paymentLink)}">${htmlEscape(closeout.paymentLink)}</a></p>` : ""}
     ${!closeout.paymentLink && closeout.invoiceNumber ? `<p><strong>Invoice:</strong> ${htmlEscape(closeout.invoiceNumber)}</p>` : ""}
-    ${closeout.reviewRequested ? `<p>A review request has been started. Thank you for helping other local customers find reliable IT support.</p>` : ""}
+    ${closeout.reviewRequested && reviewUrl ? `<p>If the service helped, an honest review would help nearby customers find reliable local IT support.</p><p><a href="${htmlEscape(reviewUrl)}">Leave an honest review</a></p>` : ""}
+    ${closeout.reviewRequested && !reviewUrl ? `<p>A review request has been started. Thank you for helping other local customers find reliable IT support.</p>` : ""}
     <p>If you have questions or the issue comes back, call or text <a href="tel:+19092608660">909-260-8660</a>.</p>
     <p>909 Signal IT<br><a href="mailto:support@909signalit.com">support@909signalit.com</a></p>
   `;
@@ -213,6 +217,48 @@ export async function sendRemoteAssistCloseoutEmail(closeout) {
   return resend.emails.send({
     from: fromEmail,
     to: closeout.email,
+    subject,
+    text,
+    html,
+    replyTo: "support@909signalit.com"
+  });
+}
+
+export async function sendReviewRequestEmail(reviewRequest) {
+  if (!isOutboundEmailConfigured() || !reviewRequest.email) {
+    return { skipped: true };
+  }
+
+  const resend = new Resend(resendApiKey);
+  const customerName = clean(reviewRequest.customerName);
+  const reviewUrl = reviewRequest.googleReviewUrl || "";
+  const subject = "How was your 909 Signal IT service?";
+  const linkText = reviewUrl
+    ? ["", "You can leave a review here:", reviewUrl]
+    : ["", "Please contact support@909signalit.com if there is anything else we can help with."];
+  const text = [
+    `Hi ${customerName},`,
+    "",
+    "Thank you for choosing 909 Signal IT.",
+    "If the service helped, an honest review would help nearby customers find reliable local IT support.",
+    ...linkText,
+    "",
+    "909 Signal IT",
+    "909-260-8660",
+    "support@909signalit.com"
+  ].join("\n");
+
+  const html = `
+    <p>Hi ${htmlEscape(customerName)},</p>
+    <p>Thank you for choosing 909 Signal IT.</p>
+    <p>If the service helped, an honest review would help nearby customers find reliable local IT support.</p>
+    ${reviewUrl ? `<p><a href="${htmlEscape(reviewUrl)}">Leave an honest review</a></p>` : `<p>Please contact <a href="mailto:support@909signalit.com">support@909signalit.com</a> if there is anything else we can help with.</p>`}
+    <p>909 Signal IT<br><a href="tel:+19092608660">909-260-8660</a><br><a href="mailto:support@909signalit.com">support@909signalit.com</a></p>
+  `;
+
+  return resend.emails.send({
+    from: fromEmail,
+    to: reviewRequest.email,
     subject,
     text,
     html,

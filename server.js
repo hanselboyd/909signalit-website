@@ -8,7 +8,7 @@ import { createServer } from "node:http";
 import { extname, join } from "node:path";
 import { URL } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
-import { isLeadNotificationConfigured, sendLeadCustomerAcknowledgement, sendLeadNotification, sendRemoteAssistCloseoutEmail, sendRemoteAssistLinkEmail } from "./src/server/email.js";
+import { isLeadNotificationConfigured, sendLeadCustomerAcknowledgement, sendLeadNotification, sendRemoteAssistCloseoutEmail, sendRemoteAssistLinkEmail, sendReviewRequestEmail } from "./src/server/email.js";
 
 const app = express();
 const server = createServer(app);
@@ -19,7 +19,7 @@ const publicAssetsRoot = join(process.cwd(), "public", "assets");
 const siteUrl = process.env.PUBLIC_SITE_URL || "https://909signalit.com";
 const serviceTermsUrl = "https://909signalit.com/terms.html";
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
-const googleReviewLink = process.env.GOOGLE_REVIEW_LINK || "";
+const googleReviewLink = process.env.GOOGLE_REVIEW_URL || process.env.GOOGLE_REVIEW_LINK || "";
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY || "";
 
 const leadStatuses = ["New Lead", "Contacted", "Scheduled", "In Progress", "Waiting on Customer", "Completed", "Invoice Sent", "Closed", "Lost"];
@@ -1197,7 +1197,8 @@ function remoteSessionCloseoutData(session) {
     followUpNeeded: completion.followUpNeeded || "No",
     invoiceNumber: invoice?.invoiceNumber || "",
     paymentLink: invoice?.paymentLink || "",
-    reviewRequested: Boolean(session.ticket?.reviewRequested)
+    reviewRequested: Boolean(session.ticket?.reviewRequested),
+    googleReviewUrl: googleReviewLink
   };
 }
 
@@ -1309,16 +1310,24 @@ function remoteReviewWarnings(session) {
 
 function remoteReviewConfirmationPage(session) {
   const warnings = remoteReviewWarnings(session);
+  const reviewMessage = reviewFollowUpText(session.ticket);
+  const reviewLinkStatus = googleReviewLink
+    ? `<p class="muted"><strong>Google review link configured.</strong> The manual message can include the Google review link.</p>`
+    : `<p class="danger"><strong>Google review link not configured.</strong> Add GOOGLE_REVIEW_URL in Railway to include a direct Google review link.</p>`;
   return layout("Confirm Review Request", `${testDemoNotice(remoteSessionIsTestDemo(session) || ticketIsTestDemo(session.ticket), "Remote Assist review request")}
     <section class="card">
       <h1>Review Request Check</h1>
       <p class="muted">Confirm this before starting the review request workflow for the linked work order.</p>
+      ${reviewLinkStatus}
       ${warnings.length ? `<ul>${warnings.map((warning) => `<li>${esc(warning)}</li>`).join("")}</ul>` : `<p>No review request warnings detected.</p>`}
+      <label>Manual review message <textarea readonly id="remote-review-message">${esc(reviewMessage)}</textarea></label>
+      <div class="row"><button type="button" data-copy-target="remote-review-message">Copy Review Message</button></div>
       <div class="row">
         <form method="post" action="/desk/remote-sessions/${session.id}/review-requested"><button>Confirm and Start Review Request</button></form>
         <a class="button" href="/desk/remote-sessions/${session.id}">Back to Remote Session</a>
+        <a class="button" href="/reviews.html" target="_blank" rel="noopener">Open Public Review Page</a>
       </div>
-    </section>`);
+    </section>${copyScript()}`);
 }
 
 function remoteSessionSafetyNote() {
@@ -1383,8 +1392,10 @@ function invoiceFollowUpText(invoice) {
 
 function reviewFollowUpText(ticket) {
   const name = ticket.customer?.name || ticket.lead?.name || "there";
-  const reviewLink = googleReviewLink || "[Google review link not configured]";
-  return `Hi ${name}, this is 909 Signal IT. Thank you again for choosing us. If the service was helpful, would you mind leaving a quick Google review? ${reviewLink}`;
+  if (googleReviewLink) {
+    return `Hi ${name}, this is 909 Signal IT. Thank you for choosing 909 Signal IT. If the service helped, an honest review would help nearby customers find reliable local IT support. You can leave a review here: ${googleReviewLink}`;
+  }
+  return `Hi ${name}, this is 909 Signal IT. Thank you for choosing 909 Signal IT. If the service helped, an honest review would help nearby customers find reliable local IT support. Please contact support@909signalit.com if there is anything else we can help with.`;
 }
 
 function copyInlineButton(id, text, label = "Copy Message") {
@@ -1664,7 +1675,7 @@ function completionSummaryPanel(ticket) {
   </section>${copyScript()}`;
 }
 
-function ticketWorkOrderPage(ticket) {
+function ticketWorkOrderPage(ticket, notice = "") {
   const customerLabel = ticketContactBlock(ticket);
   const testDemo = ticketIsTestDemo(ticket);
   const linkedInvoices = ticket.invoices?.length
@@ -1674,7 +1685,7 @@ function ticketWorkOrderPage(ticket) {
   const requestReview = ["Completed", "Closed"].includes(ticket.status)
     ? ticketReviewRequestSection(ticket)
     : `<section class="card"><h2>Review Follow-Up</h2><p class="muted">Mark the work order completed before requesting a review.</p></section>`;
-  return `${testDemoNotice(testDemo, "work order")}<section class="card">
+  return `${notice}${testDemoNotice(testDemo, "work order")}<section class="card">
       <div class="row">
         <h1>${esc(ticket.ticketNumber)}</h1>
         <form method="post" action="/desk/tickets/${ticket.id}/status"><input type="hidden" name="status" value="Scheduled"><button>Mark Scheduled</button></form>
@@ -1951,33 +1962,100 @@ support@909signalit.com`;
   </script>`;
 }
 
+function publicReviewsPage() {
+  const reviewAction = googleReviewLink
+    ? `<a class="button primary" href="${esc(googleReviewLink)}" target="_blank" rel="noopener">Leave an Honest Review</a>`
+    : `<p class="muted"><strong>Google review link not configured.</strong> Please contact <a href="mailto:support@909signalit.com">support@909signalit.com</a> if you need help or want to share feedback.</p>`;
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reviews | 909 Signal IT</title>
+    <meta name="description" content="Leave an honest review for 909 Signal IT or contact support for help with local IT support, computer repair, remote support, Wi-Fi, printers, and small business IT in Ontario, CA." />
+    <meta property="og:title" content="Reviews | 909 Signal IT" />
+    <meta property="og:description" content="Share honest feedback for 909 Signal IT or contact support for follow-up help." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://909signalit.com/reviews.html" />
+    <meta property="og:image" content="https://909signalit.com/assets/cover-office.jpg" />
+    <link rel="canonical" href="https://909signalit.com/reviews.html" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/"><span class="brand-909">909</span><span class="brand-text">Signal <strong>IT</strong></span><span class="brand-signal" aria-hidden="true"></span></a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">Menu</button>
+      <nav id="site-nav" class="site-nav" aria-label="Primary navigation">
+        <a href="/">Home</a><a href="/services.html">Services</a><a href="/remote-support.html">Remote Support</a><a href="/business-it.html">Small Business</a><a href="/service-areas.html">Service Areas</a><a class="nav-cta" href="/contact.html">Contact</a>
+      </nav>
+    </header>
+    <main>
+      <section class="page-hero">
+        <p class="eyebrow">Customer feedback</p>
+        <h1>Review 909 Signal IT</h1>
+        <p>Thank you for choosing 909 Signal IT. Honest reviews help nearby customers find reliable local IT support in Ontario, CA and nearby Inland Empire cities.</p>
+        <div class="cta-row">
+          ${reviewAction}
+          <a class="button secondary" href="mailto:support@909signalit.com">Email support@909signalit.com</a>
+          <a class="button ghost" href="/contact.html">Contact Support</a>
+        </div>
+      </section>
+      <section class="section">
+        <div class="section-heading">
+          <p class="eyebrow">Helpful feedback</p>
+          <h2>Share Your Experience</h2>
+          <p>If 909 Signal IT helped with local IT support, computer repair, remote support, Wi-Fi troubleshooting, printer setup, small business IT support, Microsoft 365/email help, POS support, or network support, a quick honest review can help other local customers make a confident choice.</p>
+          <p>If something still needs attention, please contact 909 Signal IT directly so the issue can be reviewed and followed up.</p>
+        </div>
+        <div class="services-list">
+          <article><h2>Need follow-up?</h2><p>Call or text <a href="tel:+19092608660">909-260-8660</a> or email <a href="mailto:support@909signalit.com">support@909signalit.com</a>.</p></article>
+          <article><h2>Service area</h2><p>909 Signal IT serves Ontario, Rancho Cucamonga, Fontana, Rialto, Upland, Montclair, Chino, Chino Hills, Eastvale, Pomona, Claremont, and nearby Inland Empire areas.</p></article>
+        </div>
+      </section>
+    </main>
+    <footer class="site-footer"><div class="footer-brand"><span class="brand footer-brand-logo" aria-label="909 Signal IT"><span class="brand-909">909</span><span class="brand-text">Signal <strong>IT</strong></span><span class="brand-signal" aria-hidden="true"></span></span><p>&copy; 2026 909 Signal IT. Local IT Support in Ontario, CA.</p></div><nav class="footer-links" aria-label="Footer links"><a href="/it-support-ontario-ca.html">IT Support Ontario CA</a><a href="/computer-repair-ontario-ca.html">Computer Repair Ontario CA</a><a href="/wifi-troubleshooting-ontario-ca.html">Wi-Fi Troubleshooting</a><a href="/printer-setup-ontario-ca.html">Printer Setup</a><a href="/remote-support.html">Remote Support</a><a href="/business-it.html">Business IT Support</a><a href="/reviews.html">Reviews</a><a href="/contact.html">Contact</a><a href="/terms.html">Service Terms</a></nav><p>Phone: <a href="tel:+19092608660">909-260-8660</a> - Email: <a href="mailto:support@909signalit.com">support@909signalit.com</a></p><p>Serving Ontario, CA and nearby Inland Empire cities.</p></footer>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>`;
+}
+
 function ticketReviewRequestSection(ticket) {
   if (!["Completed", "Closed"].includes(ticket.status)) return "";
 
-  if (!googleReviewLink) {
-    return `<section class="card"><h2>Request Google Review</h2><p class="muted">Add GOOGLE_REVIEW_LINK in Railway to enable review request messages.</p></section>`;
-  }
-
   const customerName = ticket.customer?.name || ticket.lead?.name || "there";
-  const textMessage = `Hi, this is 909 Signal IT. Thank you for choosing us for your IT support. If the service was helpful, would you mind leaving a quick Google review? It really helps a local Ontario business grow: ${googleReviewLink}`;
-  const emailSubject = "Thank you for choosing 909 Signal IT";
+  const customerEmail = ticket.customer?.email || ticket.lead?.email || "";
+  const linkStatus = googleReviewLink
+    ? `<p class="muted"><strong>Google review link configured.</strong> Review request messages can include the Google review link.</p>`
+    : `<p class="danger"><strong>Google review link not configured.</strong> Add GOOGLE_REVIEW_URL in Railway to include a direct Google review link. Manual follow-up copy is still available.</p>`;
+  const textMessage = googleReviewLink
+    ? `Thank you for choosing 909 Signal IT. If the service helped, an honest review would help nearby customers find reliable local IT support. You can leave a review here: ${googleReviewLink}`
+    : "Thank you for choosing 909 Signal IT. If the service helped, an honest review would help nearby customers find reliable local IT support. Please contact support@909signalit.com if there is anything else we can help with.";
+  const emailSubject = "How was your 909 Signal IT service?";
   const emailBody = `Hello ${customerName},
 
 Thank you for choosing 909 Signal IT for your technology support.
 
-If the service was helpful, would you mind leaving a quick Google review? It really helps local customers find reliable IT support in Ontario and nearby cities.
-
-Review link:
+If the service helped, an honest review would help nearby customers find reliable local IT support.
+${googleReviewLink ? `
+You can leave a review here:
 ${googleReviewLink}
+` : `
+Please contact support@909signalit.com if there is anything else we can help with.
+`}
 
 Thank you,
 909 Signal IT
 909-260-8660
 support@909signalit.com`;
+  const emailAction = customerEmail
+    ? `<form method="post" action="/desk/tickets/${ticket.id}/review-email"><button>Email Review Request</button></form>`
+    : `<p class="muted">Customer email required to send a review request email.</p>`;
 
   return `<section class="card">
     <h2>Request Google Review</h2>
     <p class="muted">Review status: ${reviewStatusLabel(ticket)}</p>
+    ${linkStatus}
     <div class="grid two">
       <div>
         <h3>Text Message</h3>
@@ -1991,11 +2069,12 @@ support@909signalit.com`;
         <div class="row"><button type="button" data-copy-target="review-email-body">Copy Review Email</button><span class="muted" data-copy-status="review-email-body"></span></div>
       </div>
     </div>
-    <label>Review Link <input readonly id="review-link" value="${esc(googleReviewLink)}"></label>
-    <div class="row"><button type="button" data-copy-target="review-link">Copy Review Link</button><span class="muted" data-copy-status="review-link"></span></div>
+    ${googleReviewLink ? `<label>Review Link <input readonly id="review-link" value="${esc(googleReviewLink)}"></label><div class="row"><button type="button" data-copy-target="review-link">Copy Google Review Link</button><span class="muted" data-copy-status="review-link"></span></div>` : `<p class="muted">Google review link not configured.</p>`}
     <div class="row">
+      ${emailAction}
       <form method="post" action="/desk/tickets/${ticket.id}/review-requested"><button>Mark Review Requested</button></form>
       <form method="post" action="/desk/tickets/${ticket.id}/review-received"><button>Mark Review Received</button></form>
+      <a class="button" href="/reviews.html" target="_blank" rel="noopener">Open Public Review Page</a>
     </div>
   </section>
   <script>
@@ -2835,7 +2914,7 @@ app.post("/desk/remote-sessions/:id/review-requested", requireAuth, async (reque
   });
   await prisma.remoteSession.update({
     where: { id: session.id },
-    data: { notes: appendRemoteAudit(session.notes, "Review workflow started", `Review warnings accepted; review requested for ticket ${session.ticket.ticketNumber}`) }
+    data: { notes: appendRemoteAudit(session.notes, "Review workflow started", `Review warnings accepted; review requested for ticket ${session.ticket.ticketNumber}; Google review link configured: ${googleReviewLink ? "yes" : "no"}`) }
   });
   response.redirect(`/desk/tickets/${session.ticketId}`);
 });
@@ -3570,7 +3649,14 @@ app.get("/desk/tickets/:id", requireAuth, async (request, response) => {
     }
   });
   if (!ticket) return response.status(404).send(layout("Ticket not found", "<section class='card'>Ticket not found.</section>"));
-  response.send(layout(ticket.ticketNumber, ticketWorkOrderPage(ticket)));
+  const reviewEmailNotice = request.query.reviewEmail === "sent"
+    ? `<section class="card"><p><strong>Review request email sent.</strong></p></section>`
+    : request.query.reviewEmail === "skipped"
+      ? `<section class="card"><p class="danger">Review request email was skipped because customer email or email configuration is missing.</p></section>`
+      : request.query.reviewEmail === "failed"
+        ? `<section class="card"><p class="danger">Review request email failed. The ticket was not blocked.</p></section>`
+        : "";
+  response.send(layout(ticket.ticketNumber, ticketWorkOrderPage(ticket, reviewEmailNotice)));
 });
 
 app.post("/desk/tickets/:id/update", requireAuth, async (request, response) => {
@@ -3635,12 +3721,48 @@ app.post("/desk/tickets/:id/review-requested", requireAuth, async (request, resp
   response.redirect(`/desk/tickets/${request.params.id}`);
 });
 
+app.post("/desk/tickets/:id/review-email", requireAuth, async (request, response) => {
+  const ticket = await prisma.ticket.findUnique({
+    where: { id: Number(request.params.id) },
+    include: { customer: true, lead: true }
+  });
+  if (!ticket) return response.redirect("/desk/tickets");
+  const email = ticket.customer?.email || ticket.lead?.email || "";
+  const customerName = ticket.customer?.name || ticket.lead?.name || "there";
+  try {
+    const result = await sendReviewRequestEmail({
+      email,
+      customerName,
+      googleReviewUrl: googleReviewLink
+    });
+    if (result?.skipped) {
+      console.warn("Review request email skipped:", { ticketId: ticket.id, hasEmail: Boolean(email), hasGoogleReviewUrl: Boolean(googleReviewLink) });
+      response.redirect(`/desk/tickets/${request.params.id}?reviewEmail=skipped`);
+      return;
+    }
+    console.log("Review request email sent:", { ticketId: ticket.id, hasGoogleReviewUrl: Boolean(googleReviewLink) });
+    await prisma.ticket.update({
+      where: { id: Number(request.params.id) },
+      data: { reviewRequested: true }
+    });
+    response.redirect(`/desk/tickets/${request.params.id}?reviewEmail=sent`);
+  } catch (error) {
+    console.error("Review request email failed:", error?.message || error);
+    response.redirect(`/desk/tickets/${request.params.id}?reviewEmail=failed`);
+  }
+});
+
 app.post("/desk/tickets/:id/review-received", requireAuth, async (request, response) => {
   await prisma.ticket.update({
     where: { id: Number(request.params.id) },
     data: { reviewRequested: true, reviewReceived: true }
   });
   response.redirect(`/desk/tickets/${request.params.id}`);
+});
+
+app.get("/reviews.html", (request, response) => {
+  response.setHeader("Cache-Control", "no-cache");
+  response.send(publicReviewsPage());
 });
 
 app.use((error, request, response, next) => {
