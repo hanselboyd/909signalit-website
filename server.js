@@ -979,6 +979,86 @@ function remoteSessionTable(sessions) {
     <tr><td><a href="/desk/remote-sessions/${session.id}">${esc(session.sessionCode)}</a></td><td>${esc(session.clientName)}</td><td>${esc(session.phone)}</td><td>${esc(session.deviceType || "")}</td><td>${esc(session.status)}</td><td>${esc(session.liveViewStatus || "Not Started")}</td><td>${session.consentAccepted ? `Accepted ${displayDateTime(session.consentAcceptedAt)}` : "Not accepted"}</td><td>${remoteSessionLinkSummary(session)}</td><td>${remoteSessionLatestActivity(session)}</td><td>${displayDateTime(session.createdAt)}</td><td>${displayDateTime(session.startedAt || session.liveViewStartedAt)}</td><td>${displayDateTime(session.endedAt || session.liveViewEndedAt)}</td><td>${remoteSessionDeliveryActions(session, true)}</td></tr>`).join("") || `<tr><td colspan="13">No remote sessions found.</td></tr>`}</tbody></table>`;
 }
 
+function remoteSessionInvoices(session = {}) {
+  return session.ticket?.invoices || [];
+}
+
+function remoteSessionInvoiceStatus(session = {}) {
+  const invoices = remoteSessionInvoices(session);
+  if (!invoices.length) return "No linked invoice";
+  const unpaid = invoices.filter((invoice) => ["Draft", "Sent", "Partially Paid", "Overdue"].includes(invoice.status));
+  if (unpaid.length) return `${unpaid.length} unpaid/open`;
+  if (invoices.some((invoice) => invoice.status === "Paid")) return "Paid";
+  return invoices.map((invoice) => invoice.status).filter(Boolean).join(", ") || "Linked";
+}
+
+function remoteSessionFollowUpNeeded(session = {}) {
+  return /^yes$/i.test(remoteSessionCompletionData(session).followUpNeeded || "");
+}
+
+function remoteSessionCloseoutSent(session = {}) {
+  return String(session.notes || "").includes("Closeout email sent");
+}
+
+function remoteSessionCompletedNotInvoiced(session = {}) {
+  return remoteSessionIsCompleted(session) && !remoteSessionInvoices(session).length;
+}
+
+function remoteSessionInvoicedUnpaid(session = {}) {
+  return remoteSessionInvoices(session).some((invoice) => ["Draft", "Sent", "Partially Paid", "Overdue"].includes(invoice.status));
+}
+
+function remoteSessionNeedsAttention(session = {}) {
+  return !session.consentAccepted ||
+    session.status === "Active" ||
+    session.liveViewStatus === "Sharing" ||
+    remoteSessionCompletedNotInvoiced(session) ||
+    remoteSessionInvoicedUnpaid(session) ||
+    remoteSessionFollowUpNeeded(session) ||
+    (remoteSessionIsCompleted(session) && !remoteSessionCloseoutSent(session));
+}
+
+function remoteSessionQueueMatches(session = {}, filter = "") {
+  if (filter === "needs-attention") return remoteSessionNeedsAttention(session);
+  if (filter === "consent-pending") return !session.consentAccepted;
+  if (filter === "in-progress") return session.status === "Active" || session.liveViewStatus === "Sharing";
+  if (filter === "completed-not-billed") return remoteSessionCompletedNotInvoiced(session);
+  if (filter === "unpaid") return remoteSessionInvoicedUnpaid(session);
+  if (filter === "follow-up-needed") return remoteSessionFollowUpNeeded(session);
+  return true;
+}
+
+function remoteSessionQueueTable(sessions) {
+  return `<table><thead><tr><th>Customer</th><th>Status</th><th>Consent</th><th>Live</th><th>Invoice/Payment</th><th>Follow-Up</th><th>Last Activity</th><th></th></tr></thead><tbody>${sessions.map((session) => `
+    <tr>
+      <td>${esc(session.clientName)}<br><span class="muted">${esc(session.phone || session.email || "")}</span></td>
+      <td>${esc(session.status)}</td>
+      <td>${session.consentAccepted ? `Accepted ${displayDateTime(session.consentAcceptedAt)}` : "Consent pending"}</td>
+      <td>${esc(session.liveViewStatus || "Not Started")}</td>
+      <td>${esc(remoteSessionInvoiceStatus(session))}</td>
+      <td>${remoteSessionFollowUpNeeded(session) ? "Yes" : "No"}</td>
+      <td>${remoteSessionLatestActivity(session)}</td>
+      <td><a href="/desk/remote-sessions/${session.id}">Open</a></td>
+    </tr>`).join("") || `<tr><td colspan="8">No remote sessions in this queue.</td></tr>`}</tbody></table>`;
+}
+
+function remoteSessionQueueFilters(activeFilter = "") {
+  const filters = [
+    ["", "All"],
+    ["needs-attention", "Needs Attention"],
+    ["consent-pending", "Consent Pending"],
+    ["in-progress", "In Progress"],
+    ["completed-not-billed", "Completed Not Billed"],
+    ["unpaid", "Unpaid"],
+    ["follow-up-needed", "Follow-Up Needed"]
+  ];
+  return `<div class="row">${filters.map(([value, label]) => `<a class="button ${activeFilter === value ? "secondary" : ""}" href="/desk/remote-sessions${value ? `?queue=${value}` : ""}">${esc(label)}</a>`).join("")}</div>`;
+}
+
+function remoteSessionQueueDefinitions() {
+  return `<p class="muted">Consent Pending means the customer has not accepted Remote Assist consent yet. Completed not invoiced means the session is complete but no linked invoice exists. Follow-up needed comes from the session completion details.</p>`;
+}
+
 function remoteSessionLinkSummary(session) {
   return [
     session.customer ? `<a href="/desk/customers/${session.customer.id}">${esc(session.customer.name)}</a>` : "",
@@ -2171,11 +2251,14 @@ app.get("/desk", requireAuth, async (request, response) => {
     reviewFollowUps,
     remoteSessionsRequested,
     remoteSessionsActive,
+    remoteSessionsConsentPending,
+    remoteSessionsCompleted,
     remoteSessionsCompletedThisMonth,
     activeLiveViewSessions,
     recentLeads,
     recentTickets,
-    recentInvoices
+    recentInvoices,
+    remoteSessionsForQueue
   ] = await Promise.all([
     prisma.lead.count({ where: { createdAt: { gte: today.start, lt: today.end } } }),
     prisma.lead.count({ where: { createdAt: { gte: weekStart } } }),
@@ -2203,11 +2286,18 @@ app.get("/desk", requireAuth, async (request, response) => {
     prisma.ticket.count({ where: reviewFollowUpWhere }),
     prisma.remoteSession.count({ where: { status: "Requested" } }),
     prisma.remoteSession.count({ where: { status: "Active" } }),
+    prisma.remoteSession.count({ where: { consentAccepted: false } }),
+    prisma.remoteSession.count({ where: { status: "Ended" } }),
     prisma.remoteSession.count({ where: { status: "Ended", endedAt: { gte: month.start, lt: month.end } } }),
     prisma.remoteSession.count({ where: { liveViewStatus: "Sharing" } }),
     prisma.lead.findMany({ orderBy: { createdAt: "desc" }, take: 12 }),
     prisma.ticket.findMany({ include: { customer: true, lead: true }, orderBy: { updatedAt: "desc" }, take: 20 }),
-    prisma.invoice.findMany({ orderBy: { updatedAt: "desc" }, take: 20 })
+    prisma.invoice.findMany({ orderBy: { updatedAt: "desc" }, take: 20 }),
+    prisma.remoteSession.findMany({
+      include: { ticket: { include: { invoices: true, customer: true, lead: true } }, customer: true, lead: true },
+      orderBy: { updatedAt: "desc" },
+      take: 100
+    })
   ]);
 
   const paidRevenueCents = paidRevenueThisMonth._sum.totalCents || 0;
@@ -2217,6 +2307,12 @@ app.get("/desk", requireAuth, async (request, response) => {
   const openBalanceCents = openBalance._sum.totalCents || 0;
   const averageInvoiceCents = Math.round(averageInvoiceTotal._avg.totalCents || 0);
   const activityItems = dashboardActivityItems(recentLeads, recentTickets, recentInvoices);
+  const remoteQueue = remoteSessionsForQueue.filter((session) => remoteSessionQueueMatches(session, "needs-attention")).slice(0, 10);
+  const remoteLiveInProgress = remoteSessionsForQueue.filter((session) => remoteSessionQueueMatches(session, "in-progress")).length;
+  const remoteCompletedNotInvoiced = remoteSessionsForQueue.filter(remoteSessionCompletedNotInvoiced).length;
+  const remoteInvoicedUnpaid = remoteSessionsForQueue.filter(remoteSessionInvoicedUnpaid).length;
+  const remoteFollowUpNeeded = remoteSessionsForQueue.filter(remoteSessionFollowUpNeeded).length;
+  const remoteCloseoutNotSent = remoteSessionsForQueue.filter((session) => remoteSessionIsCompleted(session) && !remoteSessionCloseoutSent(session)).length;
 
   response.send(layout("Dashboard", `<section class="card">
     <div class="row"><h1>Dashboard</h1><a class="button" href="/desk/leads/new">Add Lead</a><a class="button" href="/desk/tickets">Tickets</a><a class="button" href="/desk/invoices">Invoices</a><a class="button" href="/desk/expenses">Expenses</a></div>
@@ -2253,12 +2349,18 @@ app.get("/desk", requireAuth, async (request, response) => {
     ${metricCard("Reviews received", reviewsReceived)}
   </div></section>
   <section class="card"><h2>Remote Assist</h2><div class="grid">
-    ${metricCard("Remote sessions requested", remoteSessionsRequested)}
-    ${metricCard("Remote sessions active", remoteSessionsActive)}
-    ${metricCard("Remote sessions completed this month", remoteSessionsCompletedThisMonth)}
-    ${metricCard("Active Live View sessions", activeLiveViewSessions)}
-    ${attentionCard("Remote Sessions", remoteSessionsRequested + remoteSessionsActive, "/desk/remote-sessions")}
-  </div></section>
+    ${metricCard("Active remote sessions", remoteSessionsActive)}
+    ${metricCard("Consent pending", remoteSessionsConsentPending)}
+    ${metricCard("Live/in-progress sessions", remoteLiveInProgress)}
+    ${metricCard("Completed remote sessions", remoteSessionsCompleted)}
+    ${metricCard("Completed this month", remoteSessionsCompletedThisMonth)}
+    ${metricCard("Completed but not invoiced", remoteCompletedNotInvoiced)}
+    ${metricCard("Invoiced but unpaid", remoteInvoicedUnpaid)}
+    ${metricCard("Follow-up needed", remoteFollowUpNeeded)}
+    ${metricCard("Closeout email not sent", remoteCloseoutNotSent)}
+    ${attentionCard("Remote Sessions", remoteSessionsRequested + remoteSessionsActive + remoteCompletedNotInvoiced + remoteInvoicedUnpaid + remoteFollowUpNeeded + remoteCloseoutNotSent, "/desk/remote-sessions?queue=needs-attention")}
+  </div>${remoteSessionQueueDefinitions()}</section>
+  <section class="card"><h2>Remote Assist Queue</h2>${remoteSessionQueueTable(remoteQueue)}</section>
   <section class="card"><h2>Needs Attention</h2><div class="grid">
     ${attentionCard("Open leads", openLeads, "/desk/leads")}
     ${attentionCard("Tickets needing invoice", ticketsNeedingInvoice, "/desk/tickets")}
@@ -2314,12 +2416,14 @@ app.get("/desk/follow-ups", requireAuth, async (request, response) => {
 
 app.get("/desk/remote-sessions", requireAuth, async (request, response) => {
   const status = String(request.query.status || "");
+  const queue = String(request.query.queue || "");
   const sessions = await prisma.remoteSession.findMany({
     where: status && remoteSessionStatuses.includes(status) ? { status } : {},
-    include: { ticket: true, customer: true, lead: true },
+    include: { ticket: { include: { invoices: true, customer: true, lead: true } }, customer: true, lead: true },
     orderBy: { createdAt: "desc" }
   });
-  response.send(layout("Remote Sessions", `<section class="card"><div class="row"><h1>Remote Sessions</h1><a class="button" href="/remote" target="_blank" rel="noopener">Open Client Portal</a></div><p class="muted">Consent-first tracking for 909 Signal Remote Assist. No hidden, unattended, or stealth access is provided.</p><form method="get" class="row"><label>Status <select name="status"><option value="">All statuses</option>${statusOptions(remoteSessionStatuses, status)}</select></label><button>Filter</button></form></section>${remoteSessionSafetyNote()}${remoteSessionTable(sessions)}${copyScript()}`));
+  const visibleSessions = queue ? sessions.filter((session) => remoteSessionQueueMatches(session, queue)) : sessions;
+  response.send(layout("Remote Sessions", `<section class="card"><div class="row"><h1>Remote Sessions</h1><a class="button" href="/remote" target="_blank" rel="noopener">Open Client Portal</a></div><p class="muted">Consent-first tracking for 909 Signal Remote Assist. No hidden, unattended, or stealth access is provided.</p><form method="get" class="row"><label>Status <select name="status"><option value="">All statuses</option>${statusOptions(remoteSessionStatuses, status)}</select></label><button>Filter</button></form>${remoteSessionQueueDefinitions()}${remoteSessionQueueFilters(queue)}</section>${remoteSessionSafetyNote()}<section class="card"><h2>Remote Assist Queue</h2>${remoteSessionQueueTable(visibleSessions)}</section><section class="card"><h2>Remote Sessions</h2>${remoteSessionTable(visibleSessions)}</section>${copyScript()}`));
 });
 
 app.get("/desk/remote-sessions/:id", requireAuth, async (request, response) => {
