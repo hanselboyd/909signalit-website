@@ -797,15 +797,16 @@ function publicRemotePage(message = "") {
     button,.button{display:inline-flex;width:max-content;min-height:42px;align-items:center;justify-content:center;padding:10px 16px;color:white;background:var(--blue);border:0;border-radius:8px;font-weight:900;text-decoration:none;cursor:pointer}
     .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}@media(max-width:760px){.grid{grid-template-columns:1fr}}
   </style></head><body><header><a class="brand" href="/">909 <span>Signal</span> IT</a></header><main>
-    <section class="card"><p class="muted">Consent-first remote support</p><h1>909 Signal Remote Assist</h1><p>Only start a remote support session if you are currently working with 909 Signal IT.</p></section>
+    <section class="card"><p class="muted">Consent-first remote support</p><h1>909 Signal Remote Assist</h1><p>Only start a remote support session if you are currently working with 909 Signal IT. Remote support is for troubleshooting and guidance, not hidden or unattended access.</p></section>
     ${message}
-    <section class="card warning"><h2>Before You Continue</h2><ul><li>Never share passwords in chat or notes.</li><li>You can end the session at any time.</li><li>Remote access requires your approval.</li><li>Close private documents before support begins.</li></ul></section>
+    <section class="card warning"><h2>Before You Continue</h2><ul><li>You are allowing 909 Signal IT to view your screen for troubleshooting.</li><li>You can stop sharing at any time.</li><li>Close private windows, passwords, banking pages, medical records, and sensitive documents before starting.</li><li>909 Signal IT will not request passwords unless absolutely necessary. Do not share passwords in plain text if avoidable.</li><li>Remote support is not unattended access.</li><li>The session may be documented in Signal Desk for service history.</li></ul></section>
+    <section class="card"><h2>How Remote Assist Works</h2><ol><li>Review and accept consent.</li><li>Close private or sensitive information.</li><li>Click Start Screen Share after the session is created.</li><li>Choose the screen, window, or browser tab to share.</li><li>Keep the browser window open during support.</li><li>Stop sharing when finished.</li></ol></section>
     <form method="post" action="/remote"><h2>Request Remote Session</h2>
       <div class="grid"><label>Client name <input name="clientName" required></label><label>Phone <input name="phone" required></label></div>
       <div class="grid"><label>Email <input name="email" type="email"></label><label>Company <input name="company"></label></div>
       <div class="grid"><label>Ticket number <input name="ticketNumber"></label><label>Device type <select name="deviceType"><option value="">Select one</option>${statusOptions(remoteDeviceTypes, "")}</select></label></div>
       <label>Issue summary <textarea name="issueSummary" required></textarea></label>
-      <label><span><input type="checkbox" name="consentAccepted" value="yes" required> I authorize 909 Signal IT to assist me remotely for troubleshooting, repair, setup, or maintenance. I understand I can end the session at any time. I am responsible for closing private documents and backing up important files before service begins. I will not share passwords through this form.</span></label>
+      <label><span><input type="checkbox" name="consentAccepted" value="yes" required> I authorize 909 Signal IT to view my screen for troubleshooting and guidance. I understand I can stop sharing at any time, this is not unattended access, and the session may be documented in Signal Desk for service history. I will close private windows, passwords, banking pages, medical records, and sensitive documents before starting.</span></label>
       <button type="submit">Request Remote Session</button>
     </form>
     <section class="card"><p>Call/text <a href="tel:+19092608660">909-260-8660</a> if you need help starting your session.</p></section>
@@ -818,7 +819,8 @@ function clientLiveViewPage(session) {
     main{width:min(920px,calc(100% - 32px));margin:28px auto}.card{padding:22px;margin-bottom:18px;background:white;border:1px solid var(--border);border-radius:8px;box-shadow:0 12px 28px rgba(7,29,60,.06)}h1,h2{margin:0 0 12px;color:var(--navy)}.muted{color:#5d6b7f}.status{font-weight:900;color:var(--blue)}button,.button{display:inline-flex;width:max-content;min-height:42px;align-items:center;justify-content:center;padding:10px 16px;color:white;background:var(--blue);border:0;border-radius:8px;font-weight:900;text-decoration:none;cursor:pointer}.stop{background:#b42318}.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
   </style></head><body><main>
     <section class="card"><p class="muted">Consent-first browser screen sharing</p><h1>909 Signal Live View</h1><p>Session code: <strong>${esc(session.sessionCode)}</strong></p><p class="status" id="status">Waiting</p></section>
-    <section class="card"><h2>Before Sharing</h2><ul><li>Only share your screen if you are currently working with 909 Signal IT.</li><li>You can stop sharing at any time.</li><li>Do not type or display passwords while sharing.</li><li>909 Signal IT does not record this session.</li><li>Do not display banking, medical, or private documents.</li></ul></section>
+    <section class="card"><h2>Before Sharing</h2><ul><li>Only share your screen if you are currently working with 909 Signal IT.</li><li>You can stop sharing at any time.</li><li>Do not type or display passwords while sharing.</li><li>909 Signal IT does not record this session.</li><li>Close banking pages, medical records, private documents, and sensitive browser tabs before starting.</li></ul></section>
+    <section class="card"><h2>Customer Steps</h2><ol><li>Review and accept consent.</li><li>Close private or sensitive information.</li><li>Click Start Screen Share.</li><li>Choose the screen, window, or browser tab to share.</li><li>Keep this browser window open during support.</li><li>Stop sharing when finished.</li></ol></section>
     <section class="card"><div class="row"><button id="start">Start Screen Share</button><button id="stop" class="stop" disabled>Stop Sharing</button><a class="button" href="/remote">Back</a></div><p class="muted" id="browser-help"></p></section>
   </main><script>
     const sessionCode = ${JSON.stringify(session.sessionCode)};
@@ -885,7 +887,7 @@ function clientLiveViewPage(session) {
 }
 
 function technicianLiveViewPage(session) {
-  return layout("Live View", `<section class="card"><div class="row"><h1>909 Signal Live View</h1><a class="button" href="/desk/remote-sessions/${session.id}">Back to Remote Session</a></div><p><strong>Session:</strong> ${esc(session.sessionCode)}<br><strong>Client:</strong> ${esc(session.clientName)}<br><strong>Phone:</strong> ${esc(session.phone)}<br><strong>Device:</strong> ${esc(session.deviceType || "")}</p><p class="muted">Viewing only. Do not ask client to display passwords. 909 Signal IT does not record this session. Do not view banking, medical, or private documents unless required and client-approved.</p><p><strong>Status:</strong> <span id="live-status">Waiting for client</span></p></section><section class="card"><video id="remote-screen" autoplay playsinline controls style="width:100%;min-height:320px;background:#071d3c;border-radius:8px"></video></section><script>
+  return layout("Live View", `<section class="card"><div class="row"><h1>909 Signal Live View</h1><a class="button" href="/desk/remote-sessions/${session.id}">Back to Remote Session</a></div>${remoteSessionDetailGrid(session)}<p class="muted">Viewing only. The customer can stop sharing at any time. Do not ask the client to display passwords, banking pages, medical records, private documents, or sensitive personal information. Use the remote session detail page for troubleshooting notes and completion summary.</p><p><strong>Status:</strong> <span id="live-status">Waiting for client</span></p></section><section class="card"><video id="remote-screen" autoplay playsinline controls style="width:100%;min-height:320px;background:#071d3c;border-radius:8px"></video></section><script>
     const sessionCode = ${JSON.stringify(session.sessionCode)};
     const statusEl = document.getElementById("live-status");
     const video = document.getElementById("remote-screen");
@@ -924,8 +926,8 @@ function technicianLiveViewPage(session) {
 }
 
 function remoteSessionTable(sessions) {
-  return `<table><thead><tr><th>Session</th><th>Client</th><th>Phone</th><th>Device</th><th>Status</th><th>Live View</th><th>Consent</th><th>Created</th><th></th></tr></thead><tbody>${sessions.map((session) => `
-    <tr><td><a href="/desk/remote-sessions/${session.id}">${esc(session.sessionCode)}</a></td><td>${esc(session.clientName)}</td><td>${esc(session.phone)}</td><td>${esc(session.deviceType || "")}</td><td>${esc(session.status)}</td><td>${esc(session.liveViewStatus || "Not Started")}</td><td>${session.consentAccepted ? "Accepted" : "Not accepted"}</td><td>${displayDate(session.createdAt)}</td><td><a href="/desk/remote-sessions/${session.id}">View</a></td></tr>`).join("") || `<tr><td colspan="9">No remote sessions found.</td></tr>`}</tbody></table>`;
+  return `<table><thead><tr><th>Session</th><th>Client</th><th>Phone</th><th>Device</th><th>Status</th><th>Live View</th><th>Consent</th><th>Linked</th><th>Created</th><th>Started</th><th>Ended</th><th></th></tr></thead><tbody>${sessions.map((session) => `
+    <tr><td><a href="/desk/remote-sessions/${session.id}">${esc(session.sessionCode)}</a></td><td>${esc(session.clientName)}</td><td>${esc(session.phone)}</td><td>${esc(session.deviceType || "")}</td><td>${esc(session.status)}</td><td>${esc(session.liveViewStatus || "Not Started")}</td><td>${session.consentAccepted ? `Accepted ${displayDateTime(session.consentAcceptedAt)}` : "Not accepted"}</td><td>${remoteSessionLinkSummary(session)}</td><td>${displayDateTime(session.createdAt)}</td><td>${displayDateTime(session.startedAt || session.liveViewStartedAt)}</td><td>${displayDateTime(session.endedAt || session.liveViewEndedAt)}</td><td><a href="/desk/remote-sessions/${session.id}">View</a></td></tr>`).join("") || `<tr><td colspan="12">No remote sessions found.</td></tr>`}</tbody></table>`;
 }
 
 function remoteSessionLinkSummary(session) {
@@ -934,6 +936,46 @@ function remoteSessionLinkSummary(session) {
     session.ticket ? `<a href="/desk/tickets/${session.ticket.id}">${esc(session.ticket.ticketNumber)}</a>` : "",
     session.lead ? `<a href="/desk/leads/${session.lead.id}">${esc(session.lead.name)}</a>` : ""
   ].filter(Boolean).join("<br>") || `<span class="muted">No linked CRM records.</span>`;
+}
+
+function remoteSessionSafetyNote() {
+  return `<section class="card warning"><h2>Internal Safety Note</h2><p>Remote sessions require customer consent. Do not ask customers to expose passwords, banking pages, private documents, or sensitive personal information during screen sharing. The customer can stop sharing at any time.</p></section>`;
+}
+
+function remoteSessionDetailGrid(session) {
+  return `<div class="grid two">
+    <p><strong>Customer/session:</strong><br>${esc(session.clientName)}<br>${esc(session.phone)}<br>${esc(session.email || "")}</p>
+    <p><strong>Related records:</strong><br>${remoteSessionLinkSummary(session)}</p>
+    <p><strong>Status:</strong><br>${esc(session.status)}<br><strong>Consent:</strong> ${session.consentAccepted ? `Accepted ${displayDateTime(session.consentAcceptedAt)}` : "Not accepted"}</p>
+    <p><strong>Live View:</strong><br>${esc(session.liveViewStatus || "Not Started")}<br><strong>Last connected:</strong> ${displayDateTime(session.liveViewLastConnectedAt)}</p>
+    <p><strong>Created:</strong><br>${displayDateTime(session.createdAt)}<br><strong>Updated:</strong> ${displayDateTime(session.updatedAt)}</p>
+    <p><strong>Started:</strong><br>${displayDateTime(session.startedAt || session.liveViewStartedAt)}<br><strong>Ended:</strong> ${displayDateTime(session.endedAt || session.liveViewEndedAt)}</p>
+  </div>`;
+}
+
+function remoteSessionCompletionForm(session) {
+  return `<form method="post" action="/desk/remote-sessions/${session.id}/complete">
+    <h2>Session Completion Summary</h2>
+    <p class="muted">Record what happened after the remote session ends. This is internal service history and can support tickets, work orders, or invoices.</p>
+    <label>Issue worked on <textarea name="issueWorkedOn">${esc(session.issueSummary || "")}</textarea></label>
+    <label>Actions taken <textarea name="actionsTaken"></textarea></label>
+    <label>Outcome <textarea name="outcome"></textarea></label>
+    <label>Recommended next steps <textarea name="recommendedNextSteps"></textarea></label>
+    <label>Follow-up needed <select name="followUpNeeded"><option>No</option><option>Yes</option></select></label>
+    <label>Invoice/work order action <select name="workOrderAction"><option>No action needed</option><option>Create or update ticket/work order</option><option>Create invoice</option><option>Review existing ticket before billing</option></select></label>
+    <button>Save Completion and End Session</button>
+  </form>`;
+}
+
+function remoteSessionCompletionNote(body) {
+  return [`[Remote Session Completion ${new Date().toLocaleString()}]`,
+    `Issue worked on: ${body.issueWorkedOn || "Not listed"}`,
+    `Actions taken: ${body.actionsTaken || "Not listed"}`,
+    `Outcome: ${body.outcome || "Not listed"}`,
+    `Recommended next steps: ${body.recommendedNextSteps || "Not listed"}`,
+    `Follow-up needed: ${body.followUpNeeded || "No"}`,
+    `Invoice/work order action: ${body.workOrderAction || "No action needed"}`
+  ].join("\n");
 }
 
 function followUpForm(title, action, values = {}, extra = "") {
@@ -1319,6 +1361,7 @@ function ticketWorkOrderPage(ticket) {
       <button>Save Work Order</button>
     </form>
     ${followUpForm("Ticket Follow-Up", `/desk/tickets/${ticket.id}/follow-up`, ticket)}
+    <section class="card"><h2>Remote Sessions</h2>${remoteSessionTable(ticket.remoteSessions || [])}</section>
     <section class="card"><h2>Related Expenses</h2>${compactExpenseTable(ticketExpenses, "No expenses connected to this ticket yet.")}</section>
     ${completionSummaryPanel(ticket)}
     ${requestReview}`;
@@ -1723,6 +1766,8 @@ app.post("/remote", async (request, response) => {
       issueSummary: body.issueSummary?.trim() || null,
       consentAccepted: true,
       consentAcceptedAt: new Date(),
+      status: "Approved",
+      approvedAt: new Date(),
       ticketId: ticket?.id || null,
       customerId: ticket?.customerId || null,
       leadId: ticket?.leadId || null
@@ -1963,9 +2008,10 @@ app.get("/desk/remote-sessions", requireAuth, async (request, response) => {
   const status = String(request.query.status || "");
   const sessions = await prisma.remoteSession.findMany({
     where: status && remoteSessionStatuses.includes(status) ? { status } : {},
+    include: { ticket: true, customer: true, lead: true },
     orderBy: { createdAt: "desc" }
   });
-  response.send(layout("Remote Sessions", `<section class="card"><div class="row"><h1>Remote Sessions</h1><a class="button" href="/remote" target="_blank" rel="noopener">Open Client Portal</a></div><p class="muted">Consent-first tracking for 909 Signal Remote Assist. No hidden, unattended, or stealth access is provided.</p><form method="get" class="row"><label>Status <select name="status"><option value="">All statuses</option>${statusOptions(remoteSessionStatuses, status)}</select></label><button>Filter</button></form></section>${remoteSessionTable(sessions)}`));
+  response.send(layout("Remote Sessions", `<section class="card"><div class="row"><h1>Remote Sessions</h1><a class="button" href="/remote" target="_blank" rel="noopener">Open Client Portal</a></div><p class="muted">Consent-first tracking for 909 Signal Remote Assist. No hidden, unattended, or stealth access is provided.</p><form method="get" class="row"><label>Status <select name="status"><option value="">All statuses</option>${statusOptions(remoteSessionStatuses, status)}</select></label><button>Filter</button></form></section>${remoteSessionSafetyNote()}${remoteSessionTable(sessions)}`));
 });
 
 app.get("/desk/remote-sessions/:id", requireAuth, async (request, response) => {
@@ -1976,13 +2022,12 @@ app.get("/desk/remote-sessions/:id", requireAuth, async (request, response) => {
   if (!session) return response.status(404).send(layout("Remote session not found", "<section class='card'>Remote session not found.</section>"));
   response.send(layout(session.sessionCode, `<section class="card">
     <div class="row"><h1>${esc(session.sessionCode)}</h1><a class="button" href="/desk/remote-sessions">Back to Remote Sessions</a></div>
-    <p><strong>Client:</strong> ${esc(session.clientName)}<br><strong>Phone:</strong> ${esc(session.phone)}<br><strong>Email:</strong> ${esc(session.email || "")}<br><strong>Company:</strong> ${esc(session.company || "")}</p>
-    <p><strong>Device:</strong> ${esc(session.deviceType || "")}<br><strong>Status:</strong> ${esc(session.status)}<br><strong>Consent:</strong> ${session.consentAccepted ? `Accepted ${displayDateTime(session.consentAcceptedAt)}` : "Not accepted"}</p>
-    <p><strong>Live View:</strong> ${esc(session.liveViewStatus || "Not Started")}<br><strong>Last connected:</strong> ${displayDateTime(session.liveViewLastConnectedAt)}<br><strong>Started:</strong> ${displayDateTime(session.liveViewStartedAt)}<br><strong>Ended:</strong> ${displayDateTime(session.liveViewEndedAt)}</p>
+    ${remoteSessionDetailGrid(session)}
+    <p><strong>Company:</strong> ${esc(session.company || "")}<br><strong>Device:</strong> ${esc(session.deviceType || "")}</p>
     <p><strong>Issue summary:</strong><br>${esc(session.issueSummary || "")}</p>
-    <p><strong>Linked records:</strong><br>${remoteSessionLinkSummary(session)}</p>
     <p><strong>Approved:</strong> ${displayDateTime(session.approvedAt)}<br><strong>Started:</strong> ${displayDateTime(session.startedAt)}<br><strong>Ended:</strong> ${displayDateTime(session.endedAt)}<br><strong>Created:</strong> ${displayDateTime(session.createdAt)}<br><strong>Updated:</strong> ${displayDateTime(session.updatedAt)}</p>
   </section>
+  ${remoteSessionSafetyNote()}
   <section class="card row">
     <a class="button" href="/desk/remote-sessions/${session.id}/live">Open Live View</a>
     ${copyInlineButton(`remote-live-link-${session.id}`, `${siteUrl}/remote/live/${session.sessionCode}`, "Copy Client Live View Link")}
@@ -2000,7 +2045,9 @@ app.get("/desk/remote-sessions/:id", requireAuth, async (request, response) => {
     <label>Connection URL <input name="connectionUrl" value="${esc(session.connectionUrl || "")}"></label>
     <label>Notes <textarea name="notes">${esc(session.notes || "")}</textarea></label>
     <button>Save Notes</button>
-  </form>${copyScript()}`));
+  </form>
+  ${remoteSessionCompletionForm(session)}
+  ${copyScript()}`));
 });
 
 app.get("/desk/remote-sessions/:id/live", requireAuth, async (request, response) => {
@@ -2027,6 +2074,22 @@ app.post("/desk/remote-sessions/:id/update", requireAuth, async (request, respon
       remoteTool: request.body.remoteTool?.trim() || null,
       connectionUrl: request.body.connectionUrl?.trim() || null,
       notes: request.body.notes?.trim() || null
+    }
+  });
+  response.redirect(`/desk/remote-sessions/${request.params.id}`);
+});
+
+app.post("/desk/remote-sessions/:id/complete", requireAuth, async (request, response) => {
+  const session = await prisma.remoteSession.findUnique({ where: { id: request.params.id } });
+  if (!session) return response.redirect("/desk/remote-sessions");
+  const completionNote = remoteSessionCompletionNote(request.body);
+  await prisma.remoteSession.update({
+    where: { id: request.params.id },
+    data: {
+      status: "Ended",
+      endedAt: new Date(),
+      liveViewEndedAt: session.liveViewEndedAt || new Date(),
+      notes: [session.notes, completionNote].filter(Boolean).join("\n\n")
     }
   });
   response.redirect(`/desk/remote-sessions/${request.params.id}`);
@@ -2329,7 +2392,13 @@ app.post("/desk/leads/new", requireAuth, async (request, response) => {
 });
 
 app.get("/desk/leads/:id", requireAuth, async (request, response) => {
-  const lead = await prisma.lead.findUnique({ where: { id: Number(request.params.id) }, include: { tickets: true } });
+  const lead = await prisma.lead.findUnique({
+    where: { id: Number(request.params.id) },
+    include: {
+      tickets: true,
+      remoteSessions: { include: { ticket: true, customer: true, lead: true }, orderBy: { createdAt: "desc" } }
+    }
+  });
   if (!lead) return response.status(404).send(layout("Lead not found", "<section class='card'>Lead not found.</section>"));
   response.send(layout(`Lead ${lead.id}`, `<section class="card"><h1>${esc(lead.name)}</h1><p>${esc(lead.phone)} Â· ${esc(lead.email || "")}</p><p>${esc(lead.serviceRequested)} in ${esc(lead.city)}</p><p>${esc(lead.message)}</p></section>
     <section class="grid two">
@@ -2349,6 +2418,7 @@ app.get("/desk/leads/:id", requireAuth, async (request, response) => {
       <section class="card"><h2>Contact</h2><p><strong>Last contacted:</strong> ${displayDateTime(lead.lastContactedAt) || "Not recorded"}</p><div class="row"><form method="post" action="/desk/leads/${lead.id}/contacted"><button>Mark Contacted Now</button></form>${copyInlineButton(`lead-detail-follow-${lead.id}`, leadFollowUpText(lead))}</div></section>
     </section>
     <section class="card row"><form method="post" action="/desk/leads/${lead.id}/customer"><button>Create Customer From Lead</button></form><form method="post" action="/desk/leads/${lead.id}/ticket"><button>Create Ticket From Lead</button></form></section>
+    <section class="card"><h2>Remote Sessions</h2>${remoteSessionTable(lead.remoteSessions || [])}</section>
     <section class="card"><h2>Related Tickets</h2>${ticketTable(lead.tickets)}</section>${copyScript()}`));
 });
 
@@ -2416,6 +2486,7 @@ app.get("/desk/customers/:id", requireAuth, async (request, response) => {
     include: {
       tickets: { include: { lead: true }, orderBy: { updatedAt: "desc" } },
       invoices: { include: { lead: true }, orderBy: { createdAt: "desc" } },
+      remoteSessions: { include: { ticket: true, customer: true, lead: true }, orderBy: { createdAt: "desc" } },
       expenses: { orderBy: { expenseDate: "desc" } }
     }
   });
@@ -2442,6 +2513,7 @@ app.get("/desk/customers/:id", requireAuth, async (request, response) => {
     </section>
     <form method="post" action="/desk/customers/${customer.id}/update"><h2>Notes</h2><label>Notes <textarea name="notes">${esc(customer.notes || "")}</textarea></label><button>Save Notes</button></form>
     ${followUpForm("Customer Follow-Up", `/desk/customers/${customer.id}/follow-up`, customer)}
+    <section class="card"><h2>Remote Sessions</h2>${remoteSessionTable(customer.remoteSessions || [])}</section>
     <section class="card"><h2>Related Tickets</h2>${customerTicketHistoryTable(customer.tickets)}</section>
     <section class="card"><h2>Related Invoices</h2>${customerInvoiceHistoryTable(customer.invoices)}</section>
     <section class="card"><h2>Related Expenses</h2>${compactExpenseTable(customer.expenses, "No expenses for this customer yet.")}</section>
@@ -2760,7 +2832,16 @@ app.post("/desk/tickets/:id/create-invoice", requireAuth, async (request, respon
 });
 
 app.get("/desk/tickets/:id", requireAuth, async (request, response) => {
-  const ticket = await prisma.ticket.findUnique({ where: { id: Number(request.params.id) }, include: { customer: true, lead: true, invoices: true, expenses: { orderBy: { expenseDate: "desc" } } } });
+  const ticket = await prisma.ticket.findUnique({
+    where: { id: Number(request.params.id) },
+    include: {
+      customer: true,
+      lead: true,
+      invoices: true,
+      expenses: { orderBy: { expenseDate: "desc" } },
+      remoteSessions: { include: { ticket: true, customer: true, lead: true }, orderBy: { createdAt: "desc" } }
+    }
+  });
   if (!ticket) return response.status(404).send(layout("Ticket not found", "<section class='card'>Ticket not found.</section>"));
   response.send(layout(ticket.ticketNumber, ticketWorkOrderPage(ticket)));
 });
