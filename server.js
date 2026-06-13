@@ -8,7 +8,7 @@ import { createServer } from "node:http";
 import { extname, join } from "node:path";
 import { URL } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
-import { isLeadNotificationConfigured, sendLeadCustomerAcknowledgement, sendLeadNotification, sendRemoteAssistLinkEmail } from "./src/server/email.js";
+import { isLeadNotificationConfigured, sendLeadCustomerAcknowledgement, sendLeadNotification, sendRemoteAssistCloseoutEmail, sendRemoteAssistLinkEmail } from "./src/server/email.js";
 
 const app = express();
 const server = createServer(app);
@@ -1091,6 +1091,41 @@ function remoteSessionCompletionData(session) {
   return data;
 }
 
+function remoteSessionCustomerEmail(session = {}) {
+  return session.email || session.customer?.email || session.lead?.email || session.ticket?.customer?.email || session.ticket?.lead?.email || "";
+}
+
+function remoteSessionCustomerName(session = {}) {
+  return session.clientName || session.customer?.name || session.lead?.name || session.ticket?.customer?.name || session.ticket?.lead?.name || "there";
+}
+
+function remoteSessionPrimaryInvoice(session = {}) {
+  return session.ticket?.invoices?.find((invoice) => invoice.paymentLink) || session.ticket?.invoices?.[0] || null;
+}
+
+function remoteSessionCloseoutData(session) {
+  const completion = remoteSessionCompletionData(session);
+  const invoice = remoteSessionPrimaryInvoice(session);
+  return {
+    customerName: remoteSessionCustomerName(session),
+    email: remoteSessionCustomerEmail(session),
+    subject: "909 Signal IT Remote Support Summary",
+    issueWorkedOn: completion.issueWorkedOn || session.issueSummary || "Not listed",
+    actionsTaken: completion.actionsTaken || "Not listed",
+    outcome: completion.outcome || "Not listed",
+    recommendedNextSteps: completion.recommendedNextSteps || "Not listed",
+    followUpNeeded: completion.followUpNeeded || "No",
+    invoiceNumber: invoice?.invoiceNumber || "",
+    paymentLink: invoice?.paymentLink || "",
+    reviewRequested: Boolean(session.ticket?.reviewRequested)
+  };
+}
+
+function remoteSessionIsCompleted(session = {}) {
+  const completion = remoteSessionCompletionData(session);
+  return Boolean(session.status === "Ended" || session.endedAt || completion.actionsTaken || completion.outcome);
+}
+
 function remoteSessionWorkOrderSummary(session) {
   const completion = remoteSessionCompletionData(session);
   return [
@@ -1132,6 +1167,34 @@ function remoteSessionBillingActions(session) {
     <h3>Review</h3>
     ${reviewAction}
   </section>`;
+}
+
+function remoteSessionCloseoutActions(session) {
+  if (!remoteSessionIsCompleted(session)) return "";
+  const email = remoteSessionCustomerEmail(session);
+  if (!email) {
+    return `<section class="card"><h2>Customer Closeout Email</h2><p class="muted">Customer email required before sending a closeout summary.</p></section>`;
+  }
+  return `<section class="card"><h2>Customer Closeout Email</h2><p class="muted">Send a customer-facing summary without internal notes, audit entries, passwords, or screen details.</p><a class="button" href="/desk/remote-sessions/${session.id}/closeout-email/confirm">Send Closeout Email</a></section>`;
+}
+
+function remoteCloseoutConfirmationPage(session) {
+  const closeout = remoteSessionCloseoutData(session);
+  return layout("Confirm Closeout Email", `<section class="card">
+    <div class="row"><h1>Confirm Closeout Email</h1><a class="button" href="/desk/remote-sessions/${session.id}">Back to Remote Session</a></div>
+    <p class="muted">Review the customer-facing summary before sending. Internal notes and audit history are not included.</p>
+    <div class="grid two">
+      <p><strong>Recipient:</strong><br>${esc(closeout.email || "No customer email")}</p>
+      <p><strong>Subject:</strong><br>${esc(closeout.subject)}</p>
+      <p><strong>Issue worked on:</strong><br>${esc(closeout.issueWorkedOn)}</p>
+      <p><strong>Actions taken:</strong><br>${esc(closeout.actionsTaken)}</p>
+      <p><strong>Outcome:</strong><br>${esc(closeout.outcome)}</p>
+      <p><strong>Next steps:</strong><br>${esc(closeout.recommendedNextSteps)}</p>
+      <p><strong>Invoice/payment link included:</strong><br>${closeout.paymentLink ? "Yes" : "No"}</p>
+      <p><strong>Review request included:</strong><br>${closeout.reviewRequested ? "Yes" : "No"}</p>
+    </div>
+    <form method="post" action="/desk/remote-sessions/${session.id}/closeout-email"><button ${closeout.email ? "" : "disabled"}>Confirm and Send Closeout Email</button></form>
+  </section>`);
 }
 
 function remotePaymentConfirmationPage(session, invoice) {
@@ -2272,6 +2335,13 @@ app.get("/desk/remote-sessions/:id", requireAuth, async (request, response) => {
       : request.query.email === "failed"
         ? `<section class="card"><p class="danger">Remote Assist link email could not be sent. The session was not changed.</p></section>`
         : "";
+  const closeoutStatus = request.query.closeout === "sent"
+    ? `<section class="card"><p><strong>Closeout email sent.</strong></p></section>`
+    : request.query.closeout === "skipped"
+      ? `<section class="card"><p class="danger">Closeout email was skipped because no customer email or email configuration was available.</p></section>`
+      : request.query.closeout === "failed"
+        ? `<section class="card"><p class="danger">Closeout email could not be sent. The session was not changed.</p></section>`
+        : "";
   response.send(layout(session.sessionCode, `<section class="card">
     <div class="row"><h1>${esc(session.sessionCode)}</h1><a class="button" href="/desk/remote-sessions">Back to Remote Sessions</a></div>
     ${remoteSessionDetailGrid(session)}
@@ -2289,8 +2359,10 @@ app.get("/desk/remote-sessions/:id", requireAuth, async (request, response) => {
     <form method="post" action="/desk/remote-sessions/${session.id}/ticket"><button>Create Ticket from Remote Session</button></form>
   </section>
   ${deliveryStatus}
+  ${closeoutStatus}
   <section class="card"><h2>Customer Link Delivery</h2><p class="muted">Send or copy the customer-facing Remote Assist link. This is the public consent/session page, not the technician view.</p>${remoteSessionDeliveryActions(session)}</section>
   ${remoteSessionBillingActions(session)}
+  ${remoteSessionCloseoutActions(session)}
   <section class="card"><h2>Remote Assist Activity</h2>${remoteSessionActivityTable(session)}</section>
   ${remoteSessionCompletionSummary(session)}
   <form method="post" action="/desk/remote-sessions/${session.id}/update">
@@ -2378,6 +2450,54 @@ app.post("/desk/remote-sessions/:id/email-link", requireAuth, async (request, re
       data: { notes: appendRemoteAudit(session.notes, "Email link failed", "Remote Assist customer link email failed") }
     });
     response.redirect(`/desk/remote-sessions/${request.params.id}?email=failed`);
+  }
+});
+
+app.get("/desk/remote-sessions/:id/closeout-email/confirm", requireAuth, async (request, response) => {
+  const session = await prisma.remoteSession.findUnique({
+    where: { id: request.params.id },
+    include: { ticket: { include: { invoices: true, customer: true, lead: true } }, customer: true, lead: true }
+  });
+  if (!session) return response.redirect("/desk/remote-sessions");
+  if (!remoteSessionIsCompleted(session)) return response.redirect(`/desk/remote-sessions/${request.params.id}`);
+  await prisma.remoteSession.update({
+    where: { id: session.id },
+    data: { notes: appendRemoteAudit(session.notes, "Closeout email preview shown", "Remote Assist closeout summary preview opened") }
+  });
+  response.send(remoteCloseoutConfirmationPage(session));
+});
+
+app.post("/desk/remote-sessions/:id/closeout-email", requireAuth, async (request, response) => {
+  const session = await prisma.remoteSession.findUnique({
+    where: { id: request.params.id },
+    include: { ticket: { include: { invoices: true, customer: true, lead: true } }, customer: true, lead: true }
+  });
+  if (!session) return response.redirect("/desk/remote-sessions");
+  if (!remoteSessionIsCompleted(session)) return response.redirect(`/desk/remote-sessions/${request.params.id}`);
+  const closeout = remoteSessionCloseoutData(session);
+  try {
+    const result = await sendRemoteAssistCloseoutEmail(closeout);
+    if (result?.skipped) {
+      await prisma.remoteSession.update({
+        where: { id: session.id },
+        data: { notes: appendRemoteAudit(session.notes, "Closeout email skipped", closeout.email ? "Email configuration unavailable" : "No customer email available") }
+      });
+      response.redirect(`/desk/remote-sessions/${request.params.id}?closeout=skipped`);
+      return;
+    }
+    console.log("Remote Assist closeout email sent:", { sessionId: session.id });
+    await prisma.remoteSession.update({
+      where: { id: session.id },
+      data: { notes: appendRemoteAudit(session.notes, "Closeout email sent", "Remote Assist closeout summary emailed") }
+    });
+    response.redirect(`/desk/remote-sessions/${request.params.id}?closeout=sent`);
+  } catch (error) {
+    console.error("Remote Assist closeout email failed:", error?.message || error);
+    await prisma.remoteSession.update({
+      where: { id: session.id },
+      data: { notes: appendRemoteAudit(session.notes, "Closeout email failed", "Remote Assist closeout summary email failed") }
+    });
+    response.redirect(`/desk/remote-sessions/${request.params.id}?closeout=failed`);
   }
 });
 

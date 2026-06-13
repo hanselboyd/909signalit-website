@@ -157,3 +157,65 @@ export async function sendRemoteAssistLinkEmail(session, sessionLink) {
     replyTo: "support@909signalit.com"
   });
 }
+
+export async function sendRemoteAssistCloseoutEmail(closeout) {
+  if (!isOutboundEmailConfigured() || !closeout.email) {
+    return { skipped: true };
+  }
+
+  const resend = new Resend(resendApiKey);
+  const customerName = clean(closeout.customerName);
+  const subject = "909 Signal IT Remote Support Summary";
+  const paymentSection = closeout.paymentLink
+    ? ["", "Invoice/payment link:", closeout.paymentLink]
+    : closeout.invoiceNumber
+      ? ["", `Invoice: ${closeout.invoiceNumber}`]
+      : [];
+  const reviewSection = closeout.reviewRequested
+    ? ["", "Review request:", "A review request has been started. Thank you for helping other local customers find reliable IT support."]
+    : [];
+  const text = [
+    `Hi ${customerName},`,
+    "",
+    "Thank you for choosing 909 Signal IT. Here is a summary of your remote support session.",
+    "",
+    `Issue worked on: ${clean(closeout.issueWorkedOn)}`,
+    `Actions taken: ${clean(closeout.actionsTaken)}`,
+    `Outcome: ${clean(closeout.outcome)}`,
+    `Next steps: ${clean(closeout.recommendedNextSteps)}`,
+    `Follow-up needed: ${clean(closeout.followUpNeeded)}`,
+    ...paymentSection,
+    ...reviewSection,
+    "",
+    "If you have questions or the issue comes back, call or text 909-260-8660.",
+    "",
+    "909 Signal IT",
+    "support@909signalit.com"
+  ].join("\n");
+
+  const html = `
+    <p>Hi ${htmlEscape(customerName)},</p>
+    <p>Thank you for choosing 909 Signal IT. Here is a summary of your remote support session.</p>
+    <ul>
+      <li><strong>Issue worked on:</strong> ${htmlEscape(closeout.issueWorkedOn)}</li>
+      <li><strong>Actions taken:</strong> ${htmlEscape(closeout.actionsTaken)}</li>
+      <li><strong>Outcome:</strong> ${htmlEscape(closeout.outcome)}</li>
+      <li><strong>Next steps:</strong> ${htmlEscape(closeout.recommendedNextSteps)}</li>
+      <li><strong>Follow-up needed:</strong> ${htmlEscape(closeout.followUpNeeded)}</li>
+    </ul>
+    ${closeout.paymentLink ? `<p><strong>Invoice/payment link:</strong><br><a href="${htmlEscape(closeout.paymentLink)}">${htmlEscape(closeout.paymentLink)}</a></p>` : ""}
+    ${!closeout.paymentLink && closeout.invoiceNumber ? `<p><strong>Invoice:</strong> ${htmlEscape(closeout.invoiceNumber)}</p>` : ""}
+    ${closeout.reviewRequested ? `<p>A review request has been started. Thank you for helping other local customers find reliable IT support.</p>` : ""}
+    <p>If you have questions or the issue comes back, call or text <a href="tel:+19092608660">909-260-8660</a>.</p>
+    <p>909 Signal IT<br><a href="mailto:support@909signalit.com">support@909signalit.com</a></p>
+  `;
+
+  return resend.emails.send({
+    from: fromEmail,
+    to: closeout.email,
+    subject,
+    text,
+    html,
+    replyTo: "support@909signalit.com"
+  });
+}
