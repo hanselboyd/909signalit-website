@@ -12,6 +12,7 @@ export default defineConfig({
         services: page("./services.html"),
         businessIt: page("./business-it.html"),
         serviceAreas: page("./service-areas.html"),
+        bestLocalItSupportOntario: page("./best-local-it-support-ontario-ca.html"),
         contact: page("./contact.html"),
         remoteSupport: page("./remote-support.html"),
         terms: page("./terms.html"),
