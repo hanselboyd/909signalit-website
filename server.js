@@ -926,8 +926,8 @@ function technicianLiveViewPage(session) {
 }
 
 function remoteSessionTable(sessions) {
-  return `<table><thead><tr><th>Session</th><th>Client</th><th>Phone</th><th>Device</th><th>Status</th><th>Live View</th><th>Consent</th><th>Linked</th><th>Created</th><th>Started</th><th>Ended</th><th>Delivery</th></tr></thead><tbody>${sessions.map((session) => `
-    <tr><td><a href="/desk/remote-sessions/${session.id}">${esc(session.sessionCode)}</a></td><td>${esc(session.clientName)}</td><td>${esc(session.phone)}</td><td>${esc(session.deviceType || "")}</td><td>${esc(session.status)}</td><td>${esc(session.liveViewStatus || "Not Started")}</td><td>${session.consentAccepted ? `Accepted ${displayDateTime(session.consentAcceptedAt)}` : "Not accepted"}</td><td>${remoteSessionLinkSummary(session)}</td><td>${displayDateTime(session.createdAt)}</td><td>${displayDateTime(session.startedAt || session.liveViewStartedAt)}</td><td>${displayDateTime(session.endedAt || session.liveViewEndedAt)}</td><td>${remoteSessionDeliveryActions(session, true)}</td></tr>`).join("") || `<tr><td colspan="12">No remote sessions found.</td></tr>`}</tbody></table>`;
+  return `<table><thead><tr><th>Session</th><th>Client</th><th>Phone</th><th>Device</th><th>Status</th><th>Live View</th><th>Consent</th><th>Linked</th><th>Last Activity</th><th>Created</th><th>Started</th><th>Ended</th><th>Delivery</th></tr></thead><tbody>${sessions.map((session) => `
+    <tr><td><a href="/desk/remote-sessions/${session.id}">${esc(session.sessionCode)}</a></td><td>${esc(session.clientName)}</td><td>${esc(session.phone)}</td><td>${esc(session.deviceType || "")}</td><td>${esc(session.status)}</td><td>${esc(session.liveViewStatus || "Not Started")}</td><td>${session.consentAccepted ? `Accepted ${displayDateTime(session.consentAcceptedAt)}` : "Not accepted"}</td><td>${remoteSessionLinkSummary(session)}</td><td>${remoteSessionLatestActivity(session)}</td><td>${displayDateTime(session.createdAt)}</td><td>${displayDateTime(session.startedAt || session.liveViewStartedAt)}</td><td>${displayDateTime(session.endedAt || session.liveViewEndedAt)}</td><td>${remoteSessionDeliveryActions(session, true)}</td></tr>`).join("") || `<tr><td colspan="13">No remote sessions found.</td></tr>`}</tbody></table>`;
 }
 
 function remoteSessionLinkSummary(session) {
@@ -956,7 +956,65 @@ function remoteSessionDeliveryActions(session, compact = false) {
   const manualMessage = compact
     ? `<a href="/desk/remote-sessions/${session.id}">Manual message</a>`
     : `<label>Manual text/SMS message <textarea id="${esc(messageId)}" readonly>${esc(remoteSessionManualMessage(session))}</textarea></label><button class="button" type="button" data-copy-target="${esc(messageId)}">Copy Manual Message</button>`;
-  return `<div class="row"><input id="${esc(linkId)}" class="copy-source" value="${esc(remoteSessionCustomerLink(session))}" readonly><button class="button" type="button" data-copy-target="${esc(linkId)}">Copy Customer Link</button>${emailAction}</div>${manualMessage}`;
+  return `<div class="row"><input id="${esc(linkId)}" class="copy-source" value="${esc(remoteSessionCustomerLink(session))}" readonly><button class="button" type="button" data-copy-target="${esc(linkId)}" data-audit-url="/desk/remote-sessions/${session.id}/audit-copy">Copy Customer Link</button>${emailAction}</div>${manualMessage}`;
+}
+
+function remoteAuditEntry(label, details = "", at = new Date()) {
+  const safeLabel = String(label || "Remote activity").replaceAll("\n", " ").trim();
+  const safeDetails = String(details || "").replaceAll("\n", " ").trim();
+  return `[Remote Audit ${at.toISOString()}] ${safeLabel}${safeDetails ? ` - ${safeDetails}` : ""}`;
+}
+
+function appendRemoteAudit(notes, label, details = "", at = new Date()) {
+  return [notes, remoteAuditEntry(label, details, at)].filter(Boolean).join("\n");
+}
+
+function parseRemoteAuditEvents(notes = "") {
+  return String(notes || "").split("\n").map((line) => {
+    const match = line.match(/^\[Remote Audit ([^\]]+)\]\s*(.+)$/);
+    if (!match) return null;
+    const detailParts = match[2].split(" - ");
+    return {
+      at: new Date(match[1]),
+      label: detailParts.shift() || "Remote activity",
+      details: detailParts.join(" - ")
+    };
+  }).filter((event) => event && !Number.isNaN(event.at.getTime()));
+}
+
+function remoteSessionActivityEvents(session) {
+  const events = [
+    { at: session.createdAt, label: "Session created", details: "Remote Assist session created" },
+    session.consentAcceptedAt ? { at: session.consentAcceptedAt, label: "Consent accepted", details: "Customer accepted Remote Assist consent" } : null,
+    session.approvedAt ? { at: session.approvedAt, label: "Session approved", details: "Session ready for remote support" } : null,
+    session.startedAt ? { at: session.startedAt, label: "Session started", details: "Remote session marked active" } : null,
+    session.liveViewStartedAt ? { at: session.liveViewStartedAt, label: "Screen share started", details: "Customer started browser screen sharing" } : null,
+    session.liveViewEndedAt ? { at: session.liveViewEndedAt, label: "Screen share stopped", details: "Customer stopped browser screen sharing" } : null,
+    session.endedAt ? { at: session.endedAt, label: "Session marked completed", details: "Remote session marked ended" } : null,
+    ...parseRemoteAuditEvents(session.notes)
+  ].filter((event) => event?.at && !Number.isNaN(new Date(event.at).getTime()));
+  return events.sort((a, b) => new Date(b.at) - new Date(a.at));
+}
+
+function remoteSessionLatestActivity(session) {
+  const latest = remoteSessionActivityEvents(session)[0];
+  return latest ? `${esc(latest.label)}<br><span class="muted">${displayDateTime(latest.at)}</span>` : `<span class="muted">No activity yet.</span>`;
+}
+
+function remoteSessionActivityTable(session) {
+  const events = remoteSessionActivityEvents(session);
+  return `<table><thead><tr><th>Time</th><th>Event</th><th>Details</th></tr></thead><tbody>${events.map((event) => `<tr><td>${displayDateTime(event.at)}</td><td>${esc(event.label)}</td><td>${esc(event.details || "")}</td></tr>`).join("") || `<tr><td colspan="3">No remote activity yet.</td></tr>`}</tbody></table>`;
+}
+
+function remoteSessionCompletionSummary(session) {
+  const notes = String(session.notes || "");
+  const match = notes.match(/\[Remote Session Completion ([^\]]+)\]([\s\S]*?)(?=\n\n\[Remote |\n\[Remote Audit |\s*$)/);
+  if (!match) return `<section class="card"><h2>Completion Record</h2><p class="muted">No completion summary saved yet.</p></section>`;
+  const rows = match[2].trim().split("\n").map((line) => {
+    const [label, ...rest] = line.split(":");
+    return `<p><strong>${esc(label || "Detail")}:</strong><br>${esc(rest.join(":").trim() || "Not listed")}</p>`;
+  }).join("");
+  return `<section class="card"><h2>Completion Record</h2><p class="muted">Saved ${esc(match[1])}</p>${rows}</section>`;
 }
 
 function remoteSessionSafetyNote() {
@@ -1260,6 +1318,9 @@ function copyScript() {
         const text = target.value || target.textContent || "";
         try {
           await navigator.clipboard.writeText(text);
+          if (button.dataset.auditUrl) {
+            fetch(button.dataset.auditUrl, { method: "POST", keepalive: true }).catch(() => {});
+          }
           const original = button.textContent;
           button.textContent = "Copied.";
           setTimeout(() => { button.textContent = original; }, 1600);
@@ -2067,6 +2128,8 @@ app.get("/desk/remote-sessions/:id", requireAuth, async (request, response) => {
   </section>
   ${deliveryStatus}
   <section class="card"><h2>Customer Link Delivery</h2><p class="muted">Send or copy the customer-facing Remote Assist link. This is the public consent/session page, not the technician view.</p>${remoteSessionDeliveryActions(session)}</section>
+  <section class="card"><h2>Remote Assist Activity</h2>${remoteSessionActivityTable(session)}</section>
+  ${remoteSessionCompletionSummary(session)}
   <form method="post" action="/desk/remote-sessions/${session.id}/update">
     <h2>Technician Notes</h2>
     <p class="muted">Do not store client passwords or sensitive personal information in session notes.</p>
@@ -2087,26 +2150,42 @@ app.get("/desk/remote-sessions/:id/live", requireAuth, async (request, response)
 });
 
 app.post("/desk/remote-sessions/:id/status", requireAuth, async (request, response) => {
+  const session = await prisma.remoteSession.findUnique({ where: { id: request.params.id } });
+  if (!session) return response.redirect("/desk/remote-sessions");
   const status = remoteSessionStatuses.includes(request.body.status) ? request.body.status : "Requested";
   const data = { status };
   if (status === "Approved") data.approvedAt = new Date();
   if (status === "Active") data.startedAt = new Date();
   if (status === "Ended") data.endedAt = new Date();
+  data.notes = appendRemoteAudit(session.notes, `Status changed to ${status}`, "Updated in Signal Desk");
   await prisma.remoteSession.update({ where: { id: request.params.id }, data });
   response.redirect(`/desk/remote-sessions/${request.params.id}`);
 });
 
 app.post("/desk/remote-sessions/:id/update", requireAuth, async (request, response) => {
+  const session = await prisma.remoteSession.findUnique({ where: { id: request.params.id } });
+  if (!session) return response.redirect("/desk/remote-sessions");
+  const notes = request.body.notes?.trim() || "";
   await prisma.remoteSession.update({
     where: { id: request.params.id },
     data: {
       technicianName: request.body.technicianName?.trim() || null,
       remoteTool: request.body.remoteTool?.trim() || null,
       connectionUrl: request.body.connectionUrl?.trim() || null,
-      notes: request.body.notes?.trim() || null
+      notes: appendRemoteAudit(notes, "Technician notes updated", "Remote session details saved")
     }
   });
   response.redirect(`/desk/remote-sessions/${request.params.id}`);
+});
+
+app.post("/desk/remote-sessions/:id/audit-copy", requireAuth, async (request, response) => {
+  const session = await prisma.remoteSession.findUnique({ where: { id: request.params.id } });
+  if (!session) return response.status(404).json({ ok: false });
+  await prisma.remoteSession.update({
+    where: { id: request.params.id },
+    data: { notes: appendRemoteAudit(session.notes, "Customer link copied", "Remote Assist customer link copied in Signal Desk") }
+  });
+  response.json({ ok: true });
 });
 
 app.post("/desk/remote-sessions/:id/email-link", requireAuth, async (request, response) => {
@@ -2116,13 +2195,25 @@ app.post("/desk/remote-sessions/:id/email-link", requireAuth, async (request, re
     const result = await sendRemoteAssistLinkEmail(session, remoteSessionCustomerLink(session));
     if (result?.skipped) {
       console.warn("Remote Assist link email skipped:", { sessionId: session.id, hasEmail: Boolean(session.email) });
+      await prisma.remoteSession.update({
+        where: { id: request.params.id },
+        data: { notes: appendRemoteAudit(session.notes, "Email link skipped", session.email ? "Email configuration unavailable" : "No customer email available") }
+      });
       response.redirect(`/desk/remote-sessions/${request.params.id}?email=skipped`);
       return;
     }
     console.log("Remote Assist link email sent:", { sessionId: session.id });
+    await prisma.remoteSession.update({
+      where: { id: request.params.id },
+      data: { notes: appendRemoteAudit(session.notes, "Email link sent", "Remote Assist customer link emailed") }
+    });
     response.redirect(`/desk/remote-sessions/${request.params.id}?email=sent`);
   } catch (error) {
     console.error("Remote Assist link email failed:", error?.message || error);
+    await prisma.remoteSession.update({
+      where: { id: request.params.id },
+      data: { notes: appendRemoteAudit(session.notes, "Email link failed", "Remote Assist customer link email failed") }
+    });
     response.redirect(`/desk/remote-sessions/${request.params.id}?email=failed`);
   }
 });
@@ -2131,13 +2222,14 @@ app.post("/desk/remote-sessions/:id/complete", requireAuth, async (request, resp
   const session = await prisma.remoteSession.findUnique({ where: { id: request.params.id } });
   if (!session) return response.redirect("/desk/remote-sessions");
   const completionNote = remoteSessionCompletionNote(request.body);
+  const completionAudit = remoteAuditEntry("Completion summary saved", `Follow-up needed: ${request.body.followUpNeeded || "No"}; invoice/work order action: ${request.body.workOrderAction || "No action needed"}`);
   await prisma.remoteSession.update({
     where: { id: request.params.id },
     data: {
       status: "Ended",
       endedAt: new Date(),
       liveViewEndedAt: session.liveViewEndedAt || new Date(),
-      notes: [session.notes, completionNote].filter(Boolean).join("\n\n")
+      notes: [session.notes, completionNote, completionAudit].filter(Boolean).join("\n\n")
     }
   });
   response.redirect(`/desk/remote-sessions/${request.params.id}`);
@@ -2159,7 +2251,7 @@ app.post("/desk/remote-sessions/:id/ticket", requireAuth, async (request, respon
       status: "New"
     }
   });
-  await prisma.remoteSession.update({ where: { id: session.id }, data: { ticketId: ticket.id } });
+  await prisma.remoteSession.update({ where: { id: session.id }, data: { ticketId: ticket.id, notes: appendRemoteAudit(session.notes, "Ticket created", `Ticket ${ticket.ticketNumber} created from Remote Assist session`) } });
   response.redirect(`/desk/tickets/${ticket.id}`);
 });
 
