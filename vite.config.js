@@ -28,7 +28,8 @@ export default defineConfig({
         microsoft365EmailSupportOntario: page("./microsoft-365-email-support-ontario-ca.html"),
         wifiTroubleshootingOntario: page("./wifi-troubleshooting-ontario-ca.html"),
         printerSetupOntario: page("./printer-setup-ontario-ca.html"),
-        posSupportOntario: page("./pos-support-ontario-ca.html")
+        posSupportOntario: page("./pos-support-ontario-ca.html"),
+        signalscan: page("./signalscan.html")
       }
     }
   }

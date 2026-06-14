@@ -26,9 +26,10 @@ const leadStatuses = ["New Lead", "Contacted", "Scheduled", "In Progress", "Wait
 const ticketStatuses = ["New", "Scheduled", "In Progress", "Waiting on Customer", "Completed", "Closed", "Canceled"];
 const invoiceStatuses = ["Draft", "Sent", "Partially Paid", "Paid", "Overdue", "Void", "Refunded"];
 const customerTypes = ["Residential", "Business", "Warehouse", "Restaurant", "Church", "Nonprofit", "Other"];
-const serviceTypes = ["Computer Repair", "Wi-Fi Troubleshooting", "Printer Setup", "Small Business IT Support", "Network Support", "POS Support", "Microsoft 365 Support", "Email Support", "Data Backup Setup", "Remote IT Support", "Other"];
+const serviceTypes = ["Computer Repair", "PC Health Check", "Wi-Fi Troubleshooting", "Printer Setup", "Small Business IT Support", "Network Support", "POS Support", "Microsoft 365 Support", "Email Support", "Data Backup Setup", "Remote IT Support", "Other"];
 const standardServiceMenu = [
   { name: "Remote IT Support", priceCents: 6500, category: "Remote" },
+  { name: "PC Health Check", priceCents: 4900, category: "Assessment" },
   { name: "Computer Repair / Tune-Up", priceCents: 9500, category: "Computer" },
   { name: "Printer Setup", priceCents: 9500, category: "Printer" },
   { name: "Wi-Fi Troubleshooting", priceCents: 9500, category: "Network" },
@@ -46,7 +47,7 @@ const standardServiceMenu = [
   { name: "Router Setup & Troubleshooting", priceCents: 9500, category: "Network" }
 ];
 const invoiceServiceOptions = standardServiceMenu.map((service) => service.name);
-const quickServiceNames = ["Remote IT Support", "Computer Repair / Tune-Up", "Wi-Fi Troubleshooting", "Printer Setup", "Network Support", "POS Support"];
+const quickServiceNames = ["Remote IT Support", "PC Health Check", "Computer Repair / Tune-Up", "Wi-Fi Troubleshooting", "Printer Setup", "Network Support", "POS Support"];
 const expenseCategories = ["Parts / Hardware", "Software / Subscriptions", "Fuel / Travel", "Tools / Equipment", "Phone / Internet", "Marketing / Ads", "Office Supplies", "Contract Labor", "Fees / Processing", "Meals", "Other"];
 const expensePaymentMethods = ["Cash", "Debit Card", "Credit Card", "Bank Transfer", "Stripe/Processing Fee", "Other"];
 const remoteDeviceTypes = ["Windows PC", "Mac", "Chromebook", "Android", "iPhone/iPad", "Other"];
@@ -489,6 +490,7 @@ function layout(title, body) {
       <a href="/desk/reports">Reports</a>
       <a href="/desk/follow-ups">Follow-Ups</a>
       <a href="/desk/remote-sessions">Remote Sessions</a>
+      <a href="/desk/signalscan">SignalScan</a>
       <a href="/desk/service-menu">Service Menu</a>
       <a href="/desk/logout">Logout</a>
     </nav>
@@ -727,6 +729,60 @@ function metricCard(label, value, note = "") {
 
 function attentionCard(label, count, href) {
   return `<a class="card attention-card" href="${esc(href)}"><span>${esc(label)}</span><strong>${count}</strong><small>Open list</small></a>`;
+}
+
+function signalScanDashboardPanel() {
+  return `<section class="card">
+    <div class="row"><h2>SignalScan</h2><a class="button" href="/desk/signalscan">Open SignalScan Panel</a></div>
+    <div class="grid">
+      ${metricCard("Product status", "v1.0.0 Demo Ready")}
+      ${metricCard("Package type", "Windows zip package")}
+      ${metricCard("Safety boundary", "Read-only diagnostics")}
+      ${metricCard("Outputs", "PDF Report, Markdown Draft, Local Scan History")}
+    </div>
+    <p class="muted"><strong>Demo kit:</strong> Available. <strong>Next action:</strong> Book first 3-5 PC Health Check demos.</p>
+  </section>`;
+}
+
+function signalScanLaunchChecklist() {
+  const items = [
+    "Zip package tested",
+    "PDF export tested",
+    "Markdown export tested",
+    "Demo report generated",
+    "Service offer prepared",
+    "Outreach scripts prepared",
+    "First local prospects contacted"
+  ];
+  return `<ul>${items.map((item) => `<li>${esc(item)}</li>`).join("")}</ul>`;
+}
+
+function signalScanDeskPage() {
+  return `<section class="card">
+    <div class="row"><h1>SignalScan</h1><a class="button" href="/desk/leads/new">Add PC Health Check Lead</a></div>
+    <p class="muted">Internal launch panel for SignalScan by 909 Signal IT. Do not store private artifact links, local paths, or real client reports here.</p>
+  </section>
+  <section class="card">
+    <h2>Product Summary</h2>
+    <div class="grid">
+      ${metricCard("Product status", "v1.0.0 Demo Ready")}
+      ${metricCard("Package type", "Windows zip package")}
+      ${metricCard("Safety boundary", "Read-only diagnostics")}
+      ${metricCard("Outputs", "PDF Report, Markdown Draft, Local Scan History")}
+      ${metricCard("Demo kit", "Available")}
+      ${metricCard("Next action", "Book first 3-5 PC Health Check demos")}
+    </div>
+  </section>
+  <section class="card">
+    <h2>SignalScan Launch Checklist</h2>
+    ${signalScanLaunchChecklist()}
+  </section>
+  <section class="card">
+    <h2>Service Positioning</h2>
+    <p><strong>SignalScan by 909 Signal IT</strong> is a PC Health Check / Technician Console used for read-only diagnostic scans and technician-reviewed PDF reports.</p>
+    <p><strong>Core message:</strong> AI explains. The technician decides.</p>
+    <p class="muted">SignalScan does not repair computers, remove malware, clean up files, delete files, optimize settings, or change system settings. Any follow-up work requires customer approval.</p>
+  </section>`;
 }
 
 function recentActivityTable(items) {
@@ -2397,6 +2453,7 @@ app.get("/desk", requireAuth, async (request, response) => {
     <div class="row"><h1>Dashboard</h1><a class="button" href="/desk/leads/new">Add Lead</a><a class="button" href="/desk/tickets">Tickets</a><a class="button" href="/desk/invoices">Invoices</a><a class="button" href="/desk/expenses">Expenses</a></div>
     <p class="muted">Daily command center. Week metrics use the last 7 days. Month metrics use the current server month.</p>
   </section>
+  ${signalScanDashboardPanel()}
   <section class="card"><h2>Leads</h2><div class="grid">
     ${metricCard("New leads today", newLeadsToday)}
     ${metricCard("New leads last 7 days", newLeadsWeek)}
@@ -2452,6 +2509,10 @@ app.get("/desk", requireAuth, async (request, response) => {
   </div></section>
   <section class="card"><h2>Reports & Exports</h2><p class="muted">Download CSV records for bookkeeping, taxes, and backups.</p><a class="button" href="/desk/reports">Open Reports</a></section>
   <section class="card"><h2>Recent Activity</h2>${activityItems.length ? recentActivityTable(activityItems) : `<p class="muted">No recent activity yet.</p>`}</section>`));
+});
+
+app.get("/desk/signalscan", requireAuth, (request, response) => {
+  response.send(layout("SignalScan", signalScanDeskPage()));
 });
 
 app.get("/desk/follow-ups", requireAuth, async (request, response) => {
