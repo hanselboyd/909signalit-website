@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
+    "smoke:routes": "node scripts/smoke-routes.mjs",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "postinstall": "prisma generate",

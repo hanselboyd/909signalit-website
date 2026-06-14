@@ -3841,6 +3841,25 @@ app.use("/assets", express.static(publicAssetsRoot, {
   }
 }));
 
+app.get("/signalscan", (request, response) => {
+  const builtPage = join(root, "signalscan.html");
+  const sourcePage = join(process.cwd(), "signalscan.html");
+
+  if (existsSync(builtPage)) {
+    response.setHeader("Cache-Control", "no-cache");
+    response.sendFile(builtPage);
+    return;
+  }
+
+  if (existsSync(sourcePage)) {
+    response.setHeader("Cache-Control", "no-cache");
+    response.sendFile(sourcePage);
+    return;
+  }
+
+  response.status(404).send("SignalScan page not found. Run npm.cmd run build before npm.cmd start.");
+});
+
 app.use(express.static(root, {
   extensions: ["html"],
   setHeaders(response, filePath) {
