@@ -168,6 +168,7 @@ Follow-up reminders help track leads needing contact, unpaid invoices, stale tic
 ## Brand Assets
 
 - Apple Business Connect logo asset: `public/assets/apple-business-logo-1024.png`
+- SignalScan product logo asset: `public/assets/signalscan-logo.png`
 
 ## Placeholders To Replace
 

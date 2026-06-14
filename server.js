@@ -472,6 +472,9 @@ function layout(title, body) {
     .row form { padding:0; background:transparent; border:0; box-shadow:none; }
     .service-chip { min-height:34px; padding:7px 10px; color:var(--navy); background:#eef8ee; border:1px solid rgba(53,181,31,.28); }
     .quick-add-panel { border-top:4px solid var(--green); }
+    .signalscan-brand-row { display:flex; flex-wrap:wrap; gap:16px; align-items:center; justify-content:space-between; }
+    .signalscan-logo-card { display:grid; place-items:center; min-width:220px; padding:12px; background:white; border:1px solid var(--border); border-radius:8px; }
+    .signalscan-logo-card img { display:block; width:min(280px, 100%); height:auto; }
     .copy-source { position:absolute; left:-9999px; width:1px; height:1px; }
     .danger { color:#b42318; }
     @media (max-width: 850px) { .grid, .grid.two { grid-template-columns:1fr; } table { display:block; overflow-x:auto; } header { align-items:flex-start; flex-direction:column; } }
@@ -733,7 +736,14 @@ function attentionCard(label, count, href) {
 
 function signalScanDashboardPanel() {
   return `<section class="card">
-    <div class="row"><h2>SignalScan</h2><a class="button" href="/desk/signalscan">Open SignalScan Panel</a></div>
+    <div class="signalscan-brand-row">
+      <div>
+        <h2>SignalScan</h2>
+        <p class="muted">AI explains. The technician decides.</p>
+      </div>
+      <div class="signalscan-logo-card"><img src="/assets/signalscan-logo.png" alt="SignalScan by 909 Signal IT logo"></div>
+      <a class="button" href="/desk/signalscan">Open SignalScan Panel</a>
+    </div>
     <div class="grid">
       ${metricCard("Product status", "v1.0.0 Demo Ready")}
       ${metricCard("Package type", "Windows zip package")}
@@ -759,7 +769,14 @@ function signalScanLaunchChecklist() {
 
 function signalScanDeskPage() {
   return `<section class="card">
-    <div class="row"><h1>SignalScan</h1><a class="button" href="/desk/leads/new">Add PC Health Check Lead</a></div>
+    <div class="signalscan-brand-row">
+      <div>
+        <h1>SignalScan</h1>
+        <p><strong>AI explains. The technician decides.</strong></p>
+      </div>
+      <div class="signalscan-logo-card"><img src="/assets/signalscan-logo.png" alt="SignalScan by 909 Signal IT logo"></div>
+      <a class="button" href="/desk/leads/new">Add PC Health Check Lead</a>
+    </div>
     <p class="muted">Internal launch panel for SignalScan by 909 Signal IT. Do not store private artifact links, local paths, or real client reports here.</p>
   </section>
   <section class="card">

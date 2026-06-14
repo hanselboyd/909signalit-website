@@ -511,6 +511,13 @@ h3 {
   font-weight: 800;
 }
 
+.service-logo {
+  display: block;
+  width: min(100%, 260px);
+  height: auto;
+  margin-bottom: 16px;
+}
+
 .local-service-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 0.42fr);
@@ -640,6 +647,34 @@ h3 {
 
 .page-hero h1 {
   color: var(--navy);
+}
+
+.signalscan-hero-layout,
+.signalscan-feature {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.45fr);
+  align-items: center;
+  gap: clamp(24px, 5vw, 56px);
+}
+
+.signalscan-logo-panel {
+  display: grid;
+  place-items: center;
+  padding: clamp(18px, 4vw, 28px);
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 18px 38px rgba(7, 29, 60, 0.1);
+}
+
+.signalscan-logo-panel img {
+  display: block;
+  width: min(100%, 420px);
+  height: auto;
+}
+
+.signalscan-logo-panel.compact img {
+  width: min(100%, 360px);
 }
 
 .terms-content {
@@ -848,7 +883,12 @@ textarea {
   .area-grid,
   .local-service-layout,
   .owner-trust,
-  .contact-layout {
+    .contact-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .signalscan-hero-layout,
+  .signalscan-feature {
     grid-template-columns: 1fr;
   }
 
