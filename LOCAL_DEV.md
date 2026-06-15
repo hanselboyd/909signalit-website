@@ -32,6 +32,7 @@ Local URLs:
 - SignalScan public page: `http://localhost:3000/signalscan`
 - Dashboard login: `http://localhost:3000/desk/login`
 - SignalScan dashboard panel: `http://localhost:3000/desk/signalscan`
+- Protected SignalScan package route: `http://localhost:3000/desk/downloads/signalscan/windows`
 
 The dashboard requires login. For a local dashboard smoke test, set temporary local environment variables before starting the server:
 
@@ -43,6 +44,20 @@ npm.cmd start
 ```
 
 Then open `http://localhost:3000/desk/login`, sign in with those values, and visit `http://localhost:3000/desk/signalscan`.
+
+## SignalScan Package Access
+
+The SignalScan Windows package is an internal dashboard download only. It is a zip package, not an installer, and public pages must not link to it.
+
+To make the dashboard download available locally or on the server, place the release zip here:
+
+```text
+protected-downloads/SignalScan-v1.0.0-win-x64.zip
+```
+
+Zip packages in `protected-downloads/` are ignored by git. The route `/desk/downloads/signalscan/windows` requires dashboard authentication and returns the zip as `SignalScan-v1.0.0-win-x64.zip`. If the file is missing, `/desk/signalscan` shows `Not uploaded` and the download route returns a clean dashboard 404.
+
+Internal launch notes on `/desk/signalscan` mention that Windows SmartScreen may appear for unsigned demo builds. Do not put SmartScreen instructions on public pages.
 
 ## Vite Dev Server
 
@@ -68,6 +83,8 @@ npm.cmd run smoke:routes
 ```
 
 If `ADMIN_USERNAME` and `ADMIN_PASSWORD` are set, the smoke test signs in and expects `/desk/signalscan` to return HTTP 200. Without local auth credentials, the smoke test accepts the expected redirect to `/desk/login`.
+
+The smoke test also verifies the protected SignalScan package route and confirms public pages do not expose the internal download URL.
 
 ## SignalScan Safety Copy
 

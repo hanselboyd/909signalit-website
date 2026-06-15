@@ -5,3 +5,5 @@ logo_exports/
 .env
 .env.local
 npm-debug.log*
+protected-downloads/*.zip
+!protected-downloads/.gitkeep

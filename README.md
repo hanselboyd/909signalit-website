@@ -156,6 +156,18 @@ Follow-up reminders help track leads needing contact, unpaid invoices, stale tic
 
 909 Signal Live View is a browser-based, consent-first screen-sharing MVP. Clients explicitly start screen sharing using browser permissions. Technicians can view the screen from the protected CRM. Sessions are not recorded and do not provide mouse/keyboard control.
 
+### SignalScan Package Access
+
+The protected Signal Desk route `/desk/downloads/signalscan/windows` can serve the internal SignalScan v1.0.0 Windows zip package to authenticated dashboard users only. Public pages, including `/signalscan`, must not expose this route.
+
+Place the zip package on the server at:
+
+```text
+protected-downloads/SignalScan-v1.0.0-win-x64.zip
+```
+
+Zip files in `protected-downloads/` are ignored by git. If the package is missing, `/desk/signalscan` shows `Not uploaded` and the download route returns a dashboard-friendly 404. SignalScan is currently zip-only, not an installer.
+
 ## Configured Contact
 
 - `909-260-8660`

@@ -16,6 +16,9 @@ const prisma = new PrismaClient();
 const port = process.env.PORT || 3000;
 const root = join(process.cwd(), "dist");
 const publicAssetsRoot = join(process.cwd(), "public", "assets");
+const protectedDownloadsRoot = join(process.cwd(), "protected-downloads");
+const signalScanPackageFilename = "SignalScan-v1.0.0-win-x64.zip";
+const signalScanPackagePath = join(protectedDownloadsRoot, signalScanPackageFilename);
 const siteUrl = process.env.PUBLIC_SITE_URL || "https://909signalit.com";
 const serviceTermsUrl = "https://909signalit.com/terms.html";
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
@@ -730,6 +733,10 @@ function metricCard(label, value, note = "") {
   return `<div class="card metric"><span>${esc(label)}</span><strong>${esc(value)}</strong>${note ? `<p class="muted">${esc(note)}</p>` : ""}</div>`;
 }
 
+function signalScanPackageAvailable() {
+  return existsSync(signalScanPackagePath);
+}
+
 function attentionCard(label, count, href) {
   return `<a class="card attention-card" href="${esc(href)}"><span>${esc(label)}</span><strong>${count}</strong><small>Open list</small></a>`;
 }
@@ -768,6 +775,7 @@ function signalScanLaunchChecklist() {
 }
 
 function signalScanDeskPage() {
+  const packageAvailable = signalScanPackageAvailable();
   return `<section class="card">
     <div class="signalscan-brand-row">
       <div>
@@ -778,6 +786,34 @@ function signalScanDeskPage() {
       <a class="button" href="/desk/leads/new">Add PC Health Check Lead</a>
     </div>
     <p class="muted">Internal launch panel for SignalScan by 909 Signal IT. Do not store private artifact links, local paths, or real client reports here.</p>
+  </section>
+  <section class="card">
+    <h2>SignalScan Package Access</h2>
+    <div class="grid">
+      ${metricCard("Product", "SignalScan v1.0.0")}
+      ${metricCard("Package type", "Windows zip package")}
+      ${metricCard("Status", "Demo Ready")}
+      ${metricCard("Safety boundary", "Read-only diagnostics")}
+      ${metricCard("Package file", packageAvailable ? "Available" : "Not uploaded")}
+    </div>
+    <p class="muted">Extract the zip before running SignalScan.TechnicianConsole.exe. This is not an installer. It does not create Start Menu/Desktop shortcuts automatically.</p>
+    <div class="row">
+      <a class="button" href="/desk/downloads/signalscan/windows">Download SignalScan Windows Package</a>
+      <a class="button" href="#signalscan-launch-instructions">View Launch Instructions</a>
+    </div>
+    ${packageAvailable ? "" : `<p class="muted"><strong>Package file not uploaded yet.</strong> Place the zip in the protected downloads folder on the server, then refresh this page.</p>`}
+  </section>
+  <section class="card" id="signalscan-launch-instructions">
+    <h2>Launch Instructions</h2>
+    <ol>
+      <li>Download zip.</li>
+      <li>Extract zip.</li>
+      <li>Run SignalScan.TechnicianConsole.exe.</li>
+      <li>Windows SmartScreen may appear for internal unsigned test builds.</li>
+      <li>Use More info -> Run anyway only for internal/demo testing.</li>
+      <li>Do not disable SmartScreen globally.</li>
+      <li>For public distribution, plan code signing.</li>
+    </ol>
   </section>
   <section class="card">
     <h2>Product Summary</h2>
@@ -2530,6 +2566,15 @@ app.get("/desk", requireAuth, async (request, response) => {
 
 app.get("/desk/signalscan", requireAuth, (request, response) => {
   response.send(layout("SignalScan", signalScanDeskPage()));
+});
+
+app.get("/desk/downloads/signalscan/windows", requireAuth, (request, response) => {
+  if (!signalScanPackageAvailable()) {
+    response.status(404).send(layout("SignalScan Package Not Available", `<section class="card"><h1>SignalScan package is not available on this server yet.</h1><p class="muted">Upload the Windows zip package to the protected downloads folder before using this internal dashboard download.</p><a class="button" href="/desk/signalscan">Back to SignalScan</a></section>`));
+    return;
+  }
+
+  response.download(signalScanPackagePath, signalScanPackageFilename);
 });
 
 app.get("/desk/follow-ups", requireAuth, async (request, response) => {
