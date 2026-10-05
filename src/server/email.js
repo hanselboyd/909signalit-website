@@ -93,7 +93,7 @@ export async function sendLeadCustomerAcknowledgement(lead) {
     "",
     "Thanks - your request was received. 909 Signal IT will review the issue and follow up as soon as possible.",
     "",
-    "If anything changes or the issue becomes urgent, call or text 909-260-8660.",
+    "If anything changes or the issue becomes urgent, call or text 909-319-1149.",
     "",
     "909 Signal IT",
     "support@909signalit.com"
@@ -102,7 +102,7 @@ export async function sendLeadCustomerAcknowledgement(lead) {
   const html = `
     <p>Hi ${htmlEscape(lead.name)},</p>
     <p>Thanks - your request was received. 909 Signal IT will review the issue and follow up as soon as possible.</p>
-    <p>If anything changes or the issue becomes urgent, call or text <a href="tel:+19092608660">909-260-8660</a>.</p>
+    <p>If anything changes or the issue becomes urgent, call or text <a href="tel:+19093191149">909-319-1149</a>.</p>
     <p>909 Signal IT<br><a href="mailto:support@909signalit.com">support@909signalit.com</a></p>
   `;
 
@@ -132,7 +132,7 @@ export async function sendRemoteAssistLinkEmail(session, sessionLink) {
     "Before sharing your screen, please close passwords, banking pages, medical records, private documents, or anything else you do not want visible.",
     "You can stop sharing at any time.",
     "",
-    "If you need help, call or text 909-260-8660.",
+    "If you need help, call or text 909-319-1149.",
     "",
     "909 Signal IT",
     "support@909signalit.com"
@@ -144,7 +144,7 @@ export async function sendRemoteAssistLinkEmail(session, sessionLink) {
     <p><a href="${htmlEscape(sessionLink)}">${htmlEscape(sessionLink)}</a></p>
     <p>Before sharing your screen, please close passwords, banking pages, medical records, private documents, or anything else you do not want visible.</p>
     <p>You can stop sharing at any time.</p>
-    <p>If you need help, call or text <a href="tel:+19092608660">909-260-8660</a>.</p>
+    <p>If you need help, call or text <a href="tel:+19093191149">909-319-1149</a>.</p>
     <p>909 Signal IT<br><a href="mailto:support@909signalit.com">support@909signalit.com</a></p>
   `;
 
@@ -190,7 +190,7 @@ export async function sendRemoteAssistCloseoutEmail(closeout) {
     ...paymentSection,
     ...reviewSection,
     "",
-    "If you have questions or the issue comes back, call or text 909-260-8660.",
+    "If you have questions or the issue comes back, call or text 909-319-1149.",
     "",
     "909 Signal IT",
     "support@909signalit.com"
@@ -210,7 +210,7 @@ export async function sendRemoteAssistCloseoutEmail(closeout) {
     ${!closeout.paymentLink && closeout.invoiceNumber ? `<p><strong>Invoice:</strong> ${htmlEscape(closeout.invoiceNumber)}</p>` : ""}
     ${closeout.reviewRequested && reviewUrl ? `<p>If the service helped, an honest review would help nearby customers find reliable local IT support.</p><p><a href="${htmlEscape(reviewUrl)}">Leave an honest review</a></p>` : ""}
     ${closeout.reviewRequested && !reviewUrl ? `<p>A review request has been started. Thank you for helping other local customers find reliable IT support.</p>` : ""}
-    <p>If you have questions or the issue comes back, call or text <a href="tel:+19092608660">909-260-8660</a>.</p>
+    <p>If you have questions or the issue comes back, call or text <a href="tel:+19093191149">909-319-1149</a>.</p>
     <p>909 Signal IT<br><a href="mailto:support@909signalit.com">support@909signalit.com</a></p>
   `;
 
@@ -244,7 +244,7 @@ export async function sendReviewRequestEmail(reviewRequest) {
     ...linkText,
     "",
     "909 Signal IT",
-    "909-260-8660",
+    "909-319-1149",
     "support@909signalit.com"
   ].join("\n");
 
@@ -253,7 +253,7 @@ export async function sendReviewRequestEmail(reviewRequest) {
     <p>Thank you for choosing 909 Signal IT.</p>
     <p>If the service helped, an honest review would help nearby customers find reliable local IT support.</p>
     ${reviewUrl ? `<p><a href="${htmlEscape(reviewUrl)}">Leave an honest review</a></p>` : `<p>Please contact <a href="mailto:support@909signalit.com">support@909signalit.com</a> if there is anything else we can help with.</p>`}
-    <p>909 Signal IT<br><a href="tel:+19092608660">909-260-8660</a><br><a href="mailto:support@909signalit.com">support@909signalit.com</a></p>
+    <p>909 Signal IT<br><a href="tel:+19093191149">909-319-1149</a><br><a href="mailto:support@909signalit.com">support@909signalit.com</a></p>
   `;
 
   return resend.emails.send({

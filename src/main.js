@@ -45,7 +45,7 @@ leadForms.forEach((leadForm) => {
       leadFormMessage.classList.toggle("form-success", response.ok);
       if (response.ok) leadForm.reset();
     } catch {
-      leadFormMessage.textContent = "Something went wrong. Please call or text 909-260-8660.";
+      leadFormMessage.textContent = "Something went wrong. Please call or text 909-319-1149.";
       leadFormMessage.classList.add("form-error");
     } finally {
       submitButton.disabled = false;

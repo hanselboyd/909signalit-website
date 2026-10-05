@@ -967,7 +967,7 @@ function publicRemotePage(message = "") {
       <label><span><input type="checkbox" name="consentAccepted" value="yes" required> I authorize 909 Signal IT to view my screen for troubleshooting and guidance. I understand I can stop sharing at any time, this is not unattended access, and the session may be documented in Signal Desk for service history. I will close private windows, passwords, banking pages, medical records, and sensitive documents before starting.</span></label>
       <button type="submit">Request Remote Session</button>
     </form>
-    <section class="card"><p>Call/text <a href="tel:+19092608660">909-260-8660</a> if you need help starting your session.</p></section>
+    <section class="card"><p>Call/text <a href="tel:+19093191149">909-319-1149</a> if you need help starting your session.</p></section>
   </main></body></html>`;
 }
 
@@ -1490,7 +1490,7 @@ function followUpForm(title, action, values = {}, extra = "") {
 }
 
 function leadFollowUpText(lead) {
-  return `Hi ${lead.name}, this is 909 Signal IT following up on your request for ${lead.serviceRequested}. Do you still need help? You can reply here or call/text 909-260-8660.`;
+  return `Hi ${lead.name}, this is 909 Signal IT following up on your request for ${lead.serviceRequested}. Do you still need help? You can reply here or call/text 909-319-1149.`;
 }
 
 function invoiceFollowUpText(invoice) {
@@ -1725,7 +1725,7 @@ ${finalPriceLabel(ticket)}
 Thank you for choosing 909 Signal IT.
 
 909 Signal IT
-909-260-8660
+909-319-1149
 support@909signalit.com`;
 }
 
@@ -2033,7 +2033,7 @@ Please let me know if you have any questions.
 
 Thank you,
 909 Signal IT
-909-260-8660
+909-319-1149
 support@909signalit.com`;
 
   return `<section class="card">
@@ -2118,12 +2118,12 @@ function publicReviewsPage() {
           <p>If something still needs attention, please contact 909 Signal IT directly so the issue can be reviewed and followed up.</p>
         </div>
         <div class="services-list">
-          <article><h2>Need follow-up?</h2><p>Call or text <a href="tel:+19092608660">909-260-8660</a> or email <a href="mailto:support@909signalit.com">support@909signalit.com</a>.</p></article>
+          <article><h2>Need follow-up?</h2><p>Call or text <a href="tel:+19093191149">909-319-1149</a> or email <a href="mailto:support@909signalit.com">support@909signalit.com</a>.</p></article>
           <article><h2>Service area</h2><p>909 Signal IT serves Ontario, Rancho Cucamonga, Fontana, Rialto, Upland, Montclair, Chino, Chino Hills, Eastvale, Pomona, Claremont, and nearby Inland Empire areas.</p></article>
         </div>
       </section>
     </main>
-    <footer class="site-footer"><div class="footer-brand"><span class="brand footer-brand-logo" aria-label="909 Signal IT"><span class="brand-909">909</span><span class="brand-text">Signal <strong>IT</strong></span><span class="brand-signal" aria-hidden="true"></span></span><p>&copy; 2026 909 Signal IT. Local IT Support in Ontario, CA.</p></div><nav class="footer-links" aria-label="Footer links"><a href="/it-support-ontario-ca.html">IT Support Ontario CA</a><a href="/computer-repair-ontario-ca.html">Computer Repair Ontario CA</a><a href="/wifi-troubleshooting-ontario-ca.html">Wi-Fi Troubleshooting</a><a href="/printer-setup-ontario-ca.html">Printer Setup</a><a href="/remote-support.html">Remote Support</a><a href="/business-it.html">Business IT Support</a><a href="/reviews.html">Reviews</a><a href="/contact.html">Contact</a><a href="/terms.html">Service Terms</a></nav><p>Phone: <a href="tel:+19092608660">909-260-8660</a> - Email: <a href="mailto:support@909signalit.com">support@909signalit.com</a></p><p>Serving Ontario, CA and nearby Inland Empire cities.</p></footer>
+    <footer class="site-footer"><div class="footer-brand"><span class="brand footer-brand-logo" aria-label="909 Signal IT"><span class="brand-909">909</span><span class="brand-text">Signal <strong>IT</strong></span><span class="brand-signal" aria-hidden="true"></span></span><p>&copy; 2026 909 Signal IT. Local IT Support in Ontario, CA.</p></div><nav class="footer-links" aria-label="Footer links"><a href="/it-support-ontario-ca.html">IT Support Ontario CA</a><a href="/computer-repair-ontario-ca.html">Computer Repair Ontario CA</a><a href="/wifi-troubleshooting-ontario-ca.html">Wi-Fi Troubleshooting</a><a href="/printer-setup-ontario-ca.html">Printer Setup</a><a href="/remote-support.html">Remote Support</a><a href="/business-it.html">Business IT Support</a><a href="/reviews.html">Reviews</a><a href="/contact.html">Contact</a><a href="/terms.html">Service Terms</a></nav><p>Phone: <a href="tel:+19093191149">909-319-1149</a> - Email: <a href="mailto:support@909signalit.com">support@909signalit.com</a></p><p>Serving Ontario, CA and nearby Inland Empire cities.</p></footer>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>`;
@@ -2155,7 +2155,7 @@ Please contact support@909signalit.com if there is anything else we can help wit
 
 Thank you,
 909 Signal IT
-909-260-8660
+909-319-1149
 support@909signalit.com`;
   const emailAction = customerEmail
     ? `<form method="post" action="/desk/tickets/${ticket.id}/review-email"><button>Email Review Request</button></form>`
@@ -2313,7 +2313,7 @@ app.post("/api/leads", async (request, response) => {
     response.json({ ok: true, message: "Thanks - your request was received. 909 Signal IT will review the issue and follow up as soon as possible." });
   } catch (error) {
     console.error(error);
-    response.status(500).json({ ok: false, message: "The request could not be saved. Please call or text 909-260-8660." });
+    response.status(500).json({ ok: false, message: "The request could not be saved. Please call or text 909-319-1149." });
   }
 });
 
